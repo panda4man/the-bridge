@@ -24,31 +24,35 @@ class DeploymentController extends Controller
 
             $offset = $initialOffset;
 
-            while (true) {
-                if (connection_aborted()) {
-                    break;
+            try {
+                while (true) {
+                    if (connection_aborted()) {
+                        break;
+                    }
+
+                    $deployment->refresh();
+                    $log = $deployment->log ?? '';
+                    $new = substr($log, $offset);
+
+                    if ($new !== '') {
+                        $offset = strlen($log);
+                        echo "id: {$offset}\n";
+                        echo 'data: ' . json_encode(['text' => $new]) . "\n\n";
+                        ob_flush();
+                        flush();
+                    }
+
+                    if (in_array($deployment->status, $terminal, strict: true)) {
+                        echo 'data: ' . json_encode(['done' => true, 'status' => $deployment->status->value]) . "\n\n";
+                        ob_flush();
+                        flush();
+                        break;
+                    }
+
+                    usleep(500000);
                 }
-
-                $deployment->refresh();
-                $log = $deployment->log ?? '';
-                $new = substr($log, $offset);
-
-                if ($new !== '') {
-                    $offset = strlen($log);
-                    echo "id: {$offset}\n";
-                    echo 'data: ' . json_encode(['text' => $new]) . "\n\n";
-                    ob_flush();
-                    flush();
-                }
-
-                if (in_array($deployment->status, $terminal, strict: true)) {
-                    echo 'data: ' . json_encode(['done' => true, 'status' => $deployment->status->value]) . "\n\n";
-                    ob_flush();
-                    flush();
-                    break;
-                }
-
-                usleep(500000);
+            } catch (\Throwable) {
+                // Stream already started — swallow exception to avoid "headers already sent" error
             }
         }, 200, [
             'Content-Type'      => 'text/event-stream',
