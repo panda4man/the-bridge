@@ -15,8 +15,17 @@ class ResetStuckDeployments extends Command
 
     public function handle(): void
     {
-        $count = Deployment::whereIn('status', [DeploymentStatus::Running, DeploymentStatus::Pending])
-            ->update(['status' => DeploymentStatus::Failed, 'finished_at' => now()]);
+        $stuck = Deployment::whereIn('status', [DeploymentStatus::Running, DeploymentStatus::Pending])->get();
+
+        foreach ($stuck as $deployment) {
+            $deployment->update([
+                'status'      => DeploymentStatus::Failed,
+                'finished_at' => now(),
+                'log'         => ($deployment->log ?? '') . "\n[Bridge] Container restarted — deployment interrupted.\n",
+            ]);
+        }
+
+        $count = $stuck->count();
 
         App::where('status', AppStatus::Deploying)
             ->update(['status' => AppStatus::Failed]);
