@@ -1,0 +1,21 @@
+services:
+  bridge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${BRIDGE_PORT:-8080}:80"
+    volumes:
+      - ${REPOS_PATH}:${REPOS_PATH}
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+    environment:
+      - APP_KEY=${APP_KEY}
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_CONNECTION=sqlite
+      - DB_DATABASE=/data/database.sqlite
+      - QUEUE_CONNECTION=database
+      - REPOS_PATH=${REPOS_PATH}
+      - BRIDGE_SSH_KEY_PATH=/data/ssh/id_rsa
