@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Bridge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+<nav class="bg-gray-900 text-white px-6 py-3 flex items-center gap-4">
+    <a href="/" class="font-bold text-lg tracking-tight">The Bridge</a>
+    <a href="/apps/create" class="text-sm text-gray-400 hover:text-white">+ New App</a>
+</nav>
+<main class="max-w-4xl mx-auto p-6">
+    @if(session('success'))
+        <div class="mb-4 bg-green-100 text-green-800 px-4 py-2 rounded text-sm">{{ session('success') }}</div>
+    @endif
+    @yield('content')
+</main>
+</body>
+</html>

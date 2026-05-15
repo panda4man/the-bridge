@@ -1,1 +1,34 @@
-<p>edit</p>
+@extends('layouts.app')
+@section('content')
+<h1 class="text-2xl font-bold mb-6">Edit {{ $app->name }}</h1>
+<form method="POST" action="/apps/{{ $app->id }}" class="bg-white rounded shadow p-6 space-y-4 max-w-xl">
+    @csrf
+    @method('PUT')
+    <div>
+        <label class="block text-sm font-medium mb-1">Name</label>
+        <input name="name" value="{{ old('name', $app->name) }}" required class="w-full border rounded px-3 py-2">
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Repo URL</label>
+        <input name="repo_url" value="{{ old('repo_url', $app->repo_url) }}" required class="w-full border rounded px-3 py-2">
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Branch</label>
+        <input name="branch" value="{{ old('branch', $app->branch) }}" required class="w-full border rounded px-3 py-2">
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Local Path</label>
+        <input name="path" value="{{ old('path', $app->path) }}" required class="w-full border rounded px-3 py-2">
+    </div>
+    <div class="flex gap-3">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save</button>
+        <a href="/apps/{{ $app->id }}" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">Cancel</a>
+    </div>
+</form>
+<form method="POST" action="/apps/{{ $app->id }}" class="mt-6 max-w-xl">
+    @csrf
+    @method('DELETE')
+    <button type="submit" onclick="return confirm('Delete this app?')"
+        class="text-red-600 text-sm hover:underline">Delete App</button>
+</form>
+@endsection
