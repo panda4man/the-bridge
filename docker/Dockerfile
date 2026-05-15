@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     supervisor \
     git \
     openssh-client \
+    sqlite-dev \
     docker-cli \
     docker-cli-compose \
     && docker-php-ext-install pdo_sqlite pcntl posix
