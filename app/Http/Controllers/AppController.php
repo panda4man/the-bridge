@@ -3,10 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DeploymentStatus;
+use App\Http\Requests\StoreAppRequest;
+use App\Http\Requests\UpdateAppRequest;
 use App\Jobs\DeployApp;
 use App\Models\App;
 use App\Services\GitService;
-use Illuminate\Http\Request;
 
 class AppController extends Controller
 {
@@ -21,45 +22,27 @@ class AppController extends Controller
         return view('apps.create');
     }
 
-    public function store(Request $request)
+    public function store(StoreAppRequest $request)
     {
-        $validated = $request->validate([
-            'name'     => 'required|string|max:255',
-            'repo_url' => 'required|string|max:500',
-            'branch'   => 'required|string|max:255',
-            'path'     => ['required', 'string', 'max:255', 'not_regex:/\.\./'],
-        ]);
-
-        $reposBase = rtrim(config('bridge.repos_path'), '/');
-        $validated['path'] = $reposBase . '/' . ltrim($validated['path'], '/');
-
-        if (App::where('path', $validated['path'])->exists()) {
-            return back()->withInput()->withErrors(['path' => 'An app already uses this path.']);
-        }
-
-        if (is_dir($validated['path'])) {
-            return back()->withInput()->withErrors(['path' => 'Directory already exists on disk.']);
-        }
-
-        $git = app(GitService::class);
+        $data = $request->appData();
+        $git  = app(GitService::class);
 
         try {
-            $git->clone($validated['repo_url'], $validated['path'], $validated['branch']);
+            $git->clone($data['repo_url'], $data['path'], $data['branch']);
         } catch (\RuntimeException $e) {
-            // Clean up partial clone directory if it was created
-            if (is_dir($validated['path'])) {
-                exec('rm -rf ' . escapeshellarg($validated['path']));
+            if (is_dir($data['path'])) {
+                exec('rm -rf ' . escapeshellarg($data['path']));
             }
             return back()->withInput()->withErrors(['repo_url' => 'Clone failed: ' . $e->getMessage()]);
         }
 
-        $envExample = $validated['path'] . '/.env.example';
-        $envFile    = $validated['path'] . '/.env';
+        $envExample = $data['path'] . '/.env.example';
+        $envFile    = $data['path'] . '/.env';
         if (file_exists($envExample) && !file_exists($envFile)) {
             copy($envExample, $envFile);
         }
 
-        App::create($validated);
+        App::create($data);
 
         return redirect('/')->with('success', 'App created and cloned.');
     }
@@ -75,16 +58,9 @@ class AppController extends Controller
         return view('apps.edit', compact('app'));
     }
 
-    public function update(Request $request, App $app)
+    public function update(UpdateAppRequest $request, App $app)
     {
-        $validated = $request->validate([
-            'name'     => 'required|string|max:255',
-            'repo_url' => 'required|string|max:500',
-            'branch'   => 'required|string|max:255',
-            'path'     => 'required|string|max:500',
-        ]);
-
-        $app->update($validated);
+        $app->update($request->validated());
 
         return redirect("/apps/{$app->id}")->with('success', 'App updated.');
     }
