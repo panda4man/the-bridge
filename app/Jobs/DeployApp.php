@@ -87,7 +87,7 @@ class DeployApp implements ShouldQueue
             }
 
             $composePath = escapeshellarg("{$workDir}/docker-compose.yml");
-            $cmd         = "{$sshEnv}docker compose -f {$composePath} {$subCmd}";
+            $cmd         = "{$sshEnv}docker-compose -f {$composePath} {$subCmd}";
 
             $spec  = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
             $proc  = proc_open($cmd, $spec, $pipes, $workDir);
