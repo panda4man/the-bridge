@@ -22,6 +22,9 @@ su -s /bin/sh www-data -c "php /var/www/html/artisan config:clear && php /var/ww
 # Run migrations as www-data
 su -s /bin/sh www-data -c "php /var/www/html/artisan migrate --force"
 
+# Reset any deployments stuck in running/pending from a previous crash
+su -s /bin/sh www-data -c "php /var/www/html/artisan deployments:reset-stuck"
+
 # Fix storage permissions
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 

@@ -11,6 +11,15 @@
         };
     @endphp
     <span class="text-xs px-2 py-1 rounded {{ $badge }}" x-text="status">{{ $deployment->status->value }}</span>
+    @if(in_array($deployment->status->value, ['running', 'pending']))
+        <form method="POST" action="{{ route('deployments.reset', $deployment) }}">
+            @csrf
+            <button type="submit" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                onclick="return confirm('Mark this deployment as failed?')">
+                Reset
+            </button>
+        </form>
+    @endif
 </div>
 
 <div

@@ -2,12 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AppStatus;
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
 use Illuminate\Http\Request;
 
 class DeploymentController extends Controller
 {
+    public function reset(Deployment $deployment)
+    {
+        if (in_array($deployment->status, [DeploymentStatus::Running, DeploymentStatus::Pending], strict: true)) {
+            $deployment->update(['status' => DeploymentStatus::Failed, 'finished_at' => now()]);
+            $deployment->app->update(['status' => AppStatus::Failed]);
+        }
+
+        return redirect()->route('deployments.show', $deployment)->with('success', 'Deployment reset to failed.');
+    }
+
     public function show(Deployment $deployment)
     {
         return view('deployments.show', compact('deployment'));

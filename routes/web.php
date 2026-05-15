@@ -9,3 +9,4 @@ Route::resource('apps', AppController::class)->except(['index']);
 Route::post('/apps/{app}/deploy', [AppController::class, 'deploy'])->name('apps.deploy');
 Route::get('/deployments/{deployment}', [DeploymentController::class, 'show'])->name('deployments.show');
 Route::get('/deployments/{deployment}/stream', [DeploymentController::class, 'stream'])->name('deployments.stream');
+Route::post('/deployments/{deployment}/reset', [DeploymentController::class, 'reset'])->name('deployments.reset');
