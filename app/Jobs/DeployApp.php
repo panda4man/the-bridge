@@ -52,10 +52,22 @@ class DeployApp implements ShouldQueue
             $this->appendLog($deployment, $output . "\n");
 
             foreach (['pull', 'up -d --build'] as $subCmd) {
-                $this->appendLog($deployment, "=== docker compose {$subCmd} ===\n");
-                $exit = ($this->composeRunner)($subCmd, $app->path, fn (string $chunk) => $this->appendLog($deployment, $chunk));
-                if ($exit !== 0) {
-                    throw new \RuntimeException("docker compose {$subCmd} exited with code {$exit}");
+                $attempts = 3;
+                $success  = false;
+                for ($i = 1; $i <= $attempts; $i++) {
+                    $this->appendLog($deployment, "=== docker compose {$subCmd}" . ($i > 1 ? " (attempt {$i})" : '') . " ===\n");
+                    $exit = ($this->composeRunner)($subCmd, $app->path, fn (string $chunk) => $this->appendLog($deployment, $chunk));
+                    if ($exit === 0) {
+                        $success = true;
+                        break;
+                    }
+                    if ($i < $attempts) {
+                        $this->appendLog($deployment, "Retrying in 5s...\n");
+                        sleep(5);
+                    }
+                }
+                if (!$success) {
+                    throw new \RuntimeException("docker compose {$subCmd} failed after {$attempts} attempts");
                 }
             }
 
@@ -100,7 +112,7 @@ class DeployApp implements ShouldQueue
             stream_set_blocking($pipes[1], false);
             stream_set_blocking($pipes[2], false);
 
-            $stallTimeout = 300; // seconds with no output before killing
+            $stallTimeout = 60; // seconds with no output before killing
             $lastOutput   = time();
 
             while (true) {
