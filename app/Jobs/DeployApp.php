@@ -100,12 +100,23 @@ class DeployApp implements ShouldQueue
             stream_set_blocking($pipes[1], false);
             stream_set_blocking($pipes[2], false);
 
+            $stallTimeout = 300; // seconds with no output before killing
+            $lastOutput   = time();
+
             while (true) {
                 $out = fread($pipes[1], 4096);
                 $err = fread($pipes[2], 4096);
-                if ($out) $onOutput($out);
-                if ($err) $onOutput($err);
+                if ($out) { $onOutput($out); $lastOutput = time(); }
+                if ($err) { $onOutput($err); $lastOutput = time(); }
                 if (feof($pipes[1]) && feof($pipes[2])) break;
+                if (time() - $lastOutput > $stallTimeout) {
+                    proc_terminate($proc);
+                    $onOutput("\nERROR: process stalled — no output for {$stallTimeout}s, killed.\n");
+                    fclose($pipes[1]);
+                    fclose($pipes[2]);
+                    proc_close($proc);
+                    return 1;
+                }
                 usleep(50000);
             }
 
