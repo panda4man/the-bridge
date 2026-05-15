@@ -112,7 +112,8 @@ class DeployApp implements ShouldQueue
             stream_set_blocking($pipes[1], false);
             stream_set_blocking($pipes[2], false);
 
-            $stallTimeout = 60; // seconds with no output before killing
+            // pull = network stream, should have steady output; build = can go quiet for minutes
+            $stallTimeout = str_starts_with($subCmd, 'pull') ? 60 : 300;
             $lastOutput   = time();
 
             while (true) {

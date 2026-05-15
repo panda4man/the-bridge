@@ -33,7 +33,8 @@ class DeploymentController extends Controller
             ignore_user_abort(true);
             set_time_limit(0);
 
-            $offset = $initialOffset;
+            $offset        = $initialOffset;
+            $lastHeartbeat = time();
 
             try {
                 while (true) {
@@ -51,6 +52,7 @@ class DeploymentController extends Controller
                         echo 'data: ' . json_encode(['text' => $new]) . "\n\n";
                         ob_flush();
                         flush();
+                        $lastHeartbeat = time();
                     }
 
                     if (in_array($deployment->status, $terminal, strict: true)) {
@@ -58,6 +60,13 @@ class DeploymentController extends Controller
                         ob_flush();
                         flush();
                         break;
+                    }
+
+                    if (time() - $lastHeartbeat >= 5) {
+                        echo ": heartbeat\n\n";
+                        ob_flush();
+                        flush();
+                        $lastHeartbeat = time();
                     }
 
                     usleep(500000);
