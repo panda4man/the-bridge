@@ -26,6 +26,17 @@ class DeployApp implements ShouldQueue
         $this->composeRunner = $composeRunner ?? $this->defaultComposeRunner();
     }
 
+    public function __serialize(): array
+    {
+        return ['deployment' => $this->deployment];
+    }
+
+    public function __unserialize(array $data): void
+    {
+        $this->deployment    = $data['deployment'];
+        $this->composeRunner = $this->defaultComposeRunner();
+    }
+
     public function handle(): void
     {
         $deployment = $this->deployment;
