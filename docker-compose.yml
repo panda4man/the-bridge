@@ -19,3 +19,4 @@ services:
       - QUEUE_CONNECTION=database
       - REPOS_PATH=${REPOS_PATH}
       - BRIDGE_SSH_KEY_PATH=/data/ssh/id_rsa
+      - SESSION_DRIVER=${SESSION_DRIVER:-database}
