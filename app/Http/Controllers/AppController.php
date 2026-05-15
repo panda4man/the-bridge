@@ -27,14 +27,11 @@ class AppController extends Controller
             'name'     => 'required|string|max:255',
             'repo_url' => 'required|string|max:500',
             'branch'   => 'required|string|max:255',
-            'path'     => 'required|string|max:500',
+            'path'     => ['required', 'string', 'max:255', 'not_regex:/\.\./'],
         ]);
 
         $reposBase = rtrim(config('bridge.repos_path'), '/');
-        $realPath  = realpath($validated['path']) ?: $validated['path'];
-        if (!str_starts_with($realPath . '/', $reposBase . '/') && $realPath !== $reposBase) {
-            return back()->withInput()->withErrors(['path' => "Path must be under {$reposBase}"]);
-        }
+        $validated['path'] = $reposBase . '/' . ltrim($validated['path'], '/');
 
         $git = app(GitService::class);
 
