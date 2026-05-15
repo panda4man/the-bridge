@@ -48,6 +48,12 @@ class AppController extends Controller
             return back()->withInput()->withErrors(['repo_url' => 'Clone failed: ' . $e->getMessage()]);
         }
 
+        $envExample = $validated['path'] . '/.env.example';
+        $envFile    = $validated['path'] . '/.env';
+        if (file_exists($envExample) && !file_exists($envFile)) {
+            copy($envExample, $envFile);
+        }
+
         App::create($validated);
 
         return redirect('/')->with('success', 'App created and cloned.');
