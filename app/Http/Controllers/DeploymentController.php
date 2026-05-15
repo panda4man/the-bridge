@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
+use Illuminate\Http\Request;
 
 class DeploymentController extends Controller
 {
@@ -12,15 +13,16 @@ class DeploymentController extends Controller
         return view('deployments.show', compact('deployment'));
     }
 
-    public function stream(Deployment $deployment)
+    public function stream(Request $request, Deployment $deployment)
     {
-        $terminal = [DeploymentStatus::Success, DeploymentStatus::Failed];
+        $terminal      = [DeploymentStatus::Success, DeploymentStatus::Failed];
+        $initialOffset = (int) $request->header('Last-Event-ID', 0);
 
-        return response()->stream(function () use ($deployment, $terminal) {
+        return response()->stream(function () use ($deployment, $terminal, $initialOffset) {
             ignore_user_abort(true);
             set_time_limit(0);
 
-            $offset = 0;
+            $offset = $initialOffset;
 
             while (true) {
                 if (connection_aborted()) {
@@ -32,10 +34,11 @@ class DeploymentController extends Controller
                 $new = substr($log, $offset);
 
                 if ($new !== '') {
+                    $offset = strlen($log);
+                    echo "id: {$offset}\n";
                     echo 'data: ' . json_encode(['text' => $new]) . "\n\n";
                     ob_flush();
                     flush();
-                    $offset = strlen($log);
                 }
 
                 if (in_array($deployment->status, $terminal, strict: true)) {
