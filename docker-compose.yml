@@ -12,6 +12,7 @@ services:
       - ./data:/data
     environment:
       - APP_KEY=${APP_KEY}
+      - APP_URL=${APP_URL:-http://localhost}
       - APP_ENV=production
       - APP_DEBUG=false
       - DB_CONNECTION=sqlite
