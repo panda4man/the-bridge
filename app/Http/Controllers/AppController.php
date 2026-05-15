@@ -30,11 +30,21 @@ class AppController extends Controller
             'path'     => 'required|string|max:500',
         ]);
 
+        $reposBase = rtrim(config('bridge.repos_path'), '/');
+        $realPath  = realpath($validated['path']) ?: $validated['path'];
+        if (!str_starts_with($realPath . '/', $reposBase . '/') && $realPath !== $reposBase) {
+            return back()->withInput()->withErrors(['path' => "Path must be under {$reposBase}"]);
+        }
+
         $git = app(GitService::class);
 
         try {
             $git->clone($validated['repo_url'], $validated['path'], $validated['branch']);
         } catch (\RuntimeException $e) {
+            // Clean up partial clone directory if it was created
+            if (is_dir($validated['path'])) {
+                exec('rm -rf ' . escapeshellarg($validated['path']));
+            }
             return back()->withInput()->withErrors(['repo_url' => 'Clone failed: ' . $e->getMessage()]);
         }
 

@@ -17,9 +17,16 @@ class DeploymentController extends Controller
         $terminal = [DeploymentStatus::Success, DeploymentStatus::Failed];
 
         return response()->stream(function () use ($deployment, $terminal) {
+            ignore_user_abort(true);
+            set_time_limit(0);
+
             $offset = 0;
 
             while (true) {
+                if (connection_aborted()) {
+                    break;
+                }
+
                 $deployment->refresh();
                 $log = $deployment->log ?? '';
                 $new = substr($log, $offset);
@@ -31,7 +38,7 @@ class DeploymentController extends Controller
                     $offset = strlen($log);
                 }
 
-                if (in_array($deployment->status, $terminal)) {
+                if (in_array($deployment->status, $terminal, strict: true)) {
                     echo 'data: ' . json_encode(['done' => true, 'status' => $deployment->status->value]) . "\n\n";
                     ob_flush();
                     flush();
