@@ -33,6 +33,14 @@ class AppController extends Controller
         $reposBase = rtrim(config('bridge.repos_path'), '/');
         $validated['path'] = $reposBase . '/' . ltrim($validated['path'], '/');
 
+        if (App::where('path', $validated['path'])->exists()) {
+            return back()->withInput()->withErrors(['path' => 'An app already uses this path.']);
+        }
+
+        if (is_dir($validated['path'])) {
+            return back()->withInput()->withErrors(['path' => 'Directory already exists on disk.']);
+        }
+
         $git = app(GitService::class);
 
         try {
