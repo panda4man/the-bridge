@@ -85,17 +85,22 @@ class DeployApp implements ShouldQueue
     {
         DB::statement(
             "UPDATE deployments SET log = COALESCE(log, '') || ? WHERE id = ?",
-            [$chunk, $deployment->id]
+            [$this->stripAnsi($chunk), $deployment->id]
         );
+    }
+
+    private function stripAnsi(string $text): string
+    {
+        return preg_replace('/\x1b\[[0-9;]*[A-Za-z]|\r/', '', $text);
     }
 
     private function defaultComposeRunner(): callable
     {
         return function (string $subCmd, string $workDir, callable $onOutput): int {
             $sshKey = config('bridge.ssh_key_path');
-            $sshEnv = '';
+            $sshEnv = 'DOCKER_PROGRESS=plain ';
             if (file_exists((string) $sshKey)) {
-                $sshEnv = 'GIT_SSH_COMMAND=' . escapeshellarg("ssh -i {$sshKey} -o StrictHostKeyChecking=no") . ' ';
+                $sshEnv .= 'GIT_SSH_COMMAND=' . escapeshellarg("ssh -i {$sshKey} -o StrictHostKeyChecking=no") . ' ';
             }
 
             $composePath = escapeshellarg("{$workDir}/docker-compose.yml");
