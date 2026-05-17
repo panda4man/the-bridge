@@ -33,15 +33,34 @@
 
     <dl class="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
         <div>
-            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Repository</dt>
+            <dt class="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                {{-- code-bracket --}}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
+                </svg>
+                Repository
+            </dt>
             <dd class="mt-0.5 text-gray-700 break-all">{{ $app->repo_url }}</dd>
         </div>
         <div>
-            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Branch</dt>
+            <dt class="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                {{-- tag --}}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L9.568 3Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
+                </svg>
+                Branch
+            </dt>
             <dd class="mt-0.5 text-gray-700 font-mono">{{ $app->branch }}</dd>
         </div>
         <div>
-            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Path</dt>
+            <dt class="flex items-center gap-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                {{-- folder --}}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v8.25A2.25 2.25 0 0 0 4.5 16.5h15A2.25 2.25 0 0 0 21.75 14.25V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+                </svg>
+                Path
+            </dt>
             <dd class="mt-0.5 text-gray-700 font-mono break-all">{{ $app->path }}</dd>
         </div>
     </dl>
