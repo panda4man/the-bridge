@@ -51,7 +51,7 @@ class DeployApp implements ShouldQueue
             $output = $git->pull($app->path, $app->branch);
             $this->appendLog($deployment, $output . "\n");
 
-            foreach (['pull', 'up -d --build'] as $subCmd) {
+            foreach (['pull', 'up -d --build --remove-orphans'] as $subCmd) {
                 $attempts = 3;
                 $success  = false;
                 for ($i = 1; $i <= $attempts; $i++) {
