@@ -1,27 +1,5 @@
 @extends('layouts.app')
 @section('content')
-<div class="flex items-center gap-3 mb-4">
-    <a href="/apps/{{ $deployment->app_id }}" class="text-gray-500 hover:text-gray-700 text-sm">← {{ $deployment->app->name }}</a>
-    @php
-        $badge = match($deployment->status->value) {
-            'success' => 'bg-green-100 text-green-800',
-            'failed'  => 'bg-red-100 text-red-800',
-            'running' => 'bg-yellow-100 text-yellow-800',
-            default   => 'bg-gray-100 text-gray-600',
-        };
-    @endphp
-    <span class="text-xs px-2 py-1 rounded {{ $badge }}" x-text="status">{{ $deployment->status->value }}</span>
-    @if(in_array($deployment->status->value, ['running', 'pending']))
-        <form method="POST" action="{{ route('deployments.reset', $deployment) }}">
-            @csrf
-            <button type="submit" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
-                onclick="return confirm('Mark this deployment as failed?')">
-                Reset
-            </button>
-        </form>
-    @endif
-</div>
-
 <div
     x-data="{
         log: @js($deployment->log ?? ''),
@@ -48,6 +26,29 @@
         }
     }"
 >
+    <div class="flex items-center gap-3 mb-4">
+        <a href="/apps/{{ $deployment->app_id }}" class="text-gray-500 hover:text-gray-700 text-sm">← {{ $deployment->app->name }}</a>
+        <span
+            class="text-xs px-2 py-1 rounded"
+            :class="{
+                'bg-green-100 text-green-800':   status === 'success',
+                'bg-red-100 text-red-800':       status === 'failed',
+                'bg-yellow-100 text-yellow-800': status === 'running',
+                'bg-gray-100 text-gray-600':     status === 'pending'
+            }"
+            x-text="status"
+        ></span>
+        @if(in_array($deployment->status->value, ['running', 'pending']))
+        <form method="POST" action="{{ route('deployments.reset', $deployment) }}" x-show="!done">
+            @csrf
+            <button type="submit" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                onclick="return confirm('Mark this deployment as failed?')">
+                Reset
+            </button>
+        </form>
+        @endif
+    </div>
+
     <pre
         x-ref="logbox"
         x-text="log || 'Waiting for output...'"
