@@ -14,7 +14,7 @@ class GitService
     public function clone(string $repoUrl, string $targetPath, string $branch): string
     {
         $cmd = $this->withSsh(
-            'git clone --branch ' . escapeshellarg($branch)
+            'git -c safe.directory=\'*\' clone --branch ' . escapeshellarg($branch)
             . ' ' . escapeshellarg($repoUrl)
             . ' ' . escapeshellarg($targetPath)
         );
@@ -24,7 +24,7 @@ class GitService
     public function pull(string $repoPath, string $branch): string
     {
         $cmd = $this->withSsh(
-            'git -C ' . escapeshellarg($repoPath)
+            'git -c safe.directory=\'*\' -C ' . escapeshellarg($repoPath)
             . ' pull origin ' . escapeshellarg($branch)
         );
         return $this->run($cmd);
