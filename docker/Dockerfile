@@ -11,9 +11,8 @@ RUN apk add --no-cache \
     && docker-php-ext-install pdo_sqlite pcntl posix \
     && chmod a+rx /usr/libexec/docker/cli-plugins/docker-compose \
     && ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose \
-    && mkdir -p /var/www/.docker \
-    && echo '{}' > /var/www/.docker/config.json \
-    && chown -R www-data:www-data /var/www/.docker
+    && mkdir -p /root/.docker \
+    && echo '{}' > /root/.docker/config.json
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
