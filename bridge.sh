@@ -18,8 +18,18 @@ case "${1:-}" in
     logs)
         docker logs -f bridge
         ;;
+    help|--help|-h|"")
+        echo "Usage: $0 <command>"
+        echo ""
+        echo "Commands:"
+        echo "  deploy   git pull + rebuild bridge container"
+        echo "  pull     git pull only"
+        echo "  build    rebuild bridge container only"
+        echo "  logs     tail bridge container logs"
+        ;;
     *)
-        echo "Usage: $0 {deploy|pull|build|logs}"
+        echo "Unknown command: $1"
+        echo "Run '$0 help' for usage."
         exit 1
         ;;
 esac

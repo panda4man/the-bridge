@@ -1,7 +1,16 @@
 BRIDGE_DIR     := $(shell pwd)
 DOCKGE_CONTAINER := dockge
 
-.PHONY: deploy pull build logs
+.PHONY: help deploy pull build logs
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Targets:"
+	@echo "  deploy   git pull + rebuild bridge container"
+	@echo "  pull     git pull only"
+	@echo "  build    rebuild bridge container only"
+	@echo "  logs     tail bridge container logs"
 
 deploy: pull build
 
