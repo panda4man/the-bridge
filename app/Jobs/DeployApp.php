@@ -11,13 +11,19 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 class DeployApp implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
+    public int $timeout = 0;
+
     /** @var callable */
     private $composeRunner;
+
+    private ?Process $activeProcess = null;
 
     public function __construct(
         private readonly Deployment $deployment,
@@ -39,6 +45,12 @@ class DeployApp implements ShouldQueue
 
     public function handle(): void
     {
+        pcntl_async_signals(true);
+        pcntl_signal(SIGTERM, function (): void {
+            $this->activeProcess?->stop(0);
+            exit(1);
+        });
+
         $deployment = $this->deployment;
         $app        = $deployment->app;
 
@@ -81,6 +93,17 @@ class DeployApp implements ShouldQueue
         }
     }
 
+    public function failed(\Throwable $exception): void
+    {
+        if ($this->deployment->status === DeploymentStatus::Running) {
+            $this->deployment->update([
+                'status'      => DeploymentStatus::Failed,
+                'finished_at' => now(),
+            ]);
+            $this->deployment->app?->update(['status' => AppStatus::Failed]);
+        }
+    }
+
     private function appendLog(Deployment $deployment, string $chunk): void
     {
         DB::statement(
@@ -98,50 +121,31 @@ class DeployApp implements ShouldQueue
     {
         return function (string $subCmd, string $workDir, callable $onOutput): int {
             $sshKey = config('bridge.ssh_key_path');
-            $sshEnv = 'DOCKER_PROGRESS=plain ';
+            $env    = ['DOCKER_PROGRESS' => 'plain'];
             if (file_exists((string) $sshKey)) {
-                $sshEnv .= 'GIT_SSH_COMMAND=' . escapeshellarg("ssh -i {$sshKey} -o StrictHostKeyChecking=no") . ' ';
+                $env['GIT_SSH_COMMAND'] = "ssh -i {$sshKey} -o StrictHostKeyChecking=no";
             }
 
-            $composePath = escapeshellarg("{$workDir}/docker-compose.yml");
-            $cmd         = "{$sshEnv}docker-compose -f {$composePath} {$subCmd}";
-
-            $spec  = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-            $proc  = proc_open($cmd, $spec, $pipes, $workDir);
-
-            if (!is_resource($proc)) {
-                $onOutput("Failed to start: {$cmd}\n");
-                return 1;
-            }
-
-            stream_set_blocking($pipes[1], false);
-            stream_set_blocking($pipes[2], false);
-
-            // pull = network stream, should have steady output; build = can go quiet for minutes
+            $composePath  = $workDir . '/docker-compose.yml';
+            $cmd          = 'docker-compose -f ' . escapeshellarg($composePath) . ' ' . $subCmd;
             $stallTimeout = str_starts_with($subCmd, 'pull') ? 60 : 300;
-            $lastOutput   = time();
 
-            while (true) {
-                $out = fread($pipes[1], 4096);
-                $err = fread($pipes[2], 4096);
-                if ($out) { $onOutput($out); $lastOutput = time(); }
-                if ($err) { $onOutput($err); $lastOutput = time(); }
-                if (feof($pipes[1]) && feof($pipes[2])) break;
-                if (time() - $lastOutput > $stallTimeout) {
-                    proc_terminate($proc);
-                    $onOutput("\nERROR: process stalled — no output for {$stallTimeout}s, killed.\n");
-                    fclose($pipes[1]);
-                    fclose($pipes[2]);
-                    proc_close($proc);
-                    return 1;
-                }
-                usleep(50000);
+            $process = Process::fromShellCommandline($cmd, $workDir, $env);
+            $process->setTimeout(null);
+            $process->setIdleTimeout($stallTimeout);
+
+            $this->activeProcess = $process;
+
+            try {
+                $process->run(fn(string $type, string $buffer) => $onOutput($buffer));
+            } catch (ProcessTimedOutException) {
+                $onOutput("\nERROR: process stalled — no output for {$stallTimeout}s, killed.\n");
+                return 1;
+            } finally {
+                $this->activeProcess = null;
             }
 
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-
-            return proc_close($proc);
+            return $process->getExitCode() ?? 1;
         };
     }
 }
