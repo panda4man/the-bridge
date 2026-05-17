@@ -24,16 +24,20 @@ class AppController extends Controller
 
     public function store(StoreAppRequest $request)
     {
-        $data = $request->appData();
-        $git  = app(GitService::class);
+        $data      = $request->appData();
+        $skipClone = $data['skip_clone'];
+        unset($data['skip_clone']);
 
-        try {
-            $git->clone($data['repo_url'], $data['path'], $data['branch']);
-        } catch (\RuntimeException $e) {
-            if (is_dir($data['path'])) {
-                exec('rm -rf ' . escapeshellarg($data['path']));
+        if (!$skipClone) {
+            $git = app(GitService::class);
+            try {
+                $git->clone($data['repo_url'], $data['path'], $data['branch']);
+            } catch (\RuntimeException $e) {
+                if (is_dir($data['path'])) {
+                    exec('rm -rf ' . escapeshellarg($data['path']));
+                }
+                return back()->withInput()->withErrors(['repo_url' => 'Clone failed: ' . $e->getMessage()]);
             }
-            return back()->withInput()->withErrors(['repo_url' => 'Clone failed: ' . $e->getMessage()]);
         }
 
         $envExample = $data['path'] . '/.env.example';
@@ -44,7 +48,8 @@ class AppController extends Controller
 
         App::create($data);
 
-        return redirect('/')->with('success', 'App created and cloned.');
+        $message = $skipClone ? 'App imported.' : 'App created and cloned.';
+        return redirect('/')->with('success', $message);
     }
 
     public function show(App $app)
