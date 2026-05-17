@@ -86,3 +86,59 @@ test('destroy deletes app and redirects', function () {
     $response->assertRedirect('/');
     $this->assertDatabaseMissing('apps', ['id' => $app->id]);
 });
+
+test('import registers existing git repo without cloning', function () {
+    $base = rtrim(config('bridge.repos_path'), '/');
+    $dir  = $base . '/bridge-import-' . uniqid();
+    mkdir($dir, 0755, true);
+    mkdir($dir . '/.git', 0755, true);
+
+    $this->mock(GitService::class, function ($mock) {
+        $mock->shouldNotReceive('clone');
+    });
+
+    $response = $this->post('/apps', [
+        'name'       => 'Imported App',
+        'repo_url'   => 'https://github.com/example/repo.git',
+        'branch'     => 'main',
+        'path'       => basename($dir),
+        'skip_clone' => '1',
+    ]);
+
+    $response->assertRedirect('/');
+    $this->assertDatabaseHas('apps', ['name' => 'Imported App']);
+
+    exec('rm -rf ' . escapeshellarg($dir));
+});
+
+test('import fails when directory does not exist', function () {
+    $response = $this->post('/apps', [
+        'name'       => 'Missing App',
+        'repo_url'   => 'https://github.com/example/repo.git',
+        'branch'     => 'main',
+        'path'       => 'nonexistent-' . uniqid(),
+        'skip_clone' => '1',
+    ]);
+
+    $response->assertSessionHasErrors(['path']);
+    $this->assertDatabaseMissing('apps', ['name' => 'Missing App']);
+});
+
+test('import fails when directory exists but is not a git repo', function () {
+    $base = rtrim(config('bridge.repos_path'), '/');
+    $dir  = $base . '/bridge-nogit-' . uniqid();
+    mkdir($dir, 0755, true);
+
+    $response = $this->post('/apps', [
+        'name'       => 'No Git App',
+        'repo_url'   => 'https://github.com/example/repo.git',
+        'branch'     => 'main',
+        'path'       => basename($dir),
+        'skip_clone' => '1',
+    ]);
+
+    $response->assertSessionHasErrors(['path']);
+    $this->assertDatabaseMissing('apps', ['name' => 'No Git App']);
+
+    exec('rm -rf ' . escapeshellarg($dir));
+});
