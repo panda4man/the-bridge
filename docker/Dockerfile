@@ -20,6 +20,9 @@ WORKDIR /var/www/html
 
 COPY . .
 
+RUN echo "output_buffering = Off\nmax_execution_time = 0\nimplicit_flush = On" \
+    > /usr/local/etc/php/conf.d/zzz-bridge.ini
+
 RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && mkdir -p /data/ssh \
     && chmod 700 /data/ssh \

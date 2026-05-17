@@ -30,6 +30,10 @@ class DeploymentController extends Controller
         $initialOffset = (int) $request->header('Last-Event-ID', 0);
 
         return response()->stream(function () use ($deployment, $terminal, $initialOffset) {
+            ob_implicit_flush(true);
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
             ignore_user_abort(true);
             set_time_limit(0);
 
