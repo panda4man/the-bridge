@@ -1,18 +1,52 @@
 @extends('layouts.app')
 @section('content')
-<div class="flex justify-between items-center mb-4">
-    <div>
-        <h1 class="text-2xl font-bold">{{ $app->name }}</h1>
-        <p class="text-sm text-gray-500 mt-1">{{ $app->repo_url }} &nbsp;·&nbsp; {{ $app->branch }} &nbsp;·&nbsp; {{ $app->path }}</p>
+@php
+    $statusBadge = match($app->status->value) {
+        'success'   => 'bg-green-100 text-green-800',
+        'failed'    => 'bg-red-100 text-red-800',
+        'deploying' => 'bg-yellow-100 text-yellow-800',
+        default     => 'bg-gray-100 text-gray-600',
+    };
+@endphp
+
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">{{ $app->name }}</h1>
+            <span class="inline-block mt-1 text-xs px-2 py-0.5 rounded {{ $statusBadge }}">
+                {{ $app->status->value }}
+            </span>
+        </div>
+        <div class="flex gap-2 shrink-0">
+            <form method="POST" action="/apps/{{ $app->id }}/deploy">
+                @csrf
+                <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-medium">
+                    Deploy
+                </button>
+            </form>
+            <a href="/apps/{{ $app->id }}/edit"
+               class="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 text-sm font-medium">
+                Edit
+            </a>
+        </div>
     </div>
-    <div class="flex gap-2">
-        <form method="POST" action="/apps/{{ $app->id }}/deploy">
-            @csrf
-            <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Deploy</button>
-        </form>
-        <a href="/apps/{{ $app->id }}/edit" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-sm">Edit</a>
-    </div>
+
+    <dl class="mt-4 pt-4 border-t border-gray-100 grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
+        <div>
+            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Repository</dt>
+            <dd class="mt-0.5 text-gray-700 break-all">{{ $app->repo_url }}</dd>
+        </div>
+        <div>
+            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Branch</dt>
+            <dd class="mt-0.5 text-gray-700 font-mono">{{ $app->branch }}</dd>
+        </div>
+        <div>
+            <dt class="text-xs font-medium text-gray-400 uppercase tracking-wide">Path</dt>
+            <dd class="mt-0.5 text-gray-700 font-mono break-all">{{ $app->path }}</dd>
+        </div>
+    </dl>
 </div>
+
 <h2 class="font-semibold mb-3">Deploy History</h2>
 @forelse($deployments as $deployment)
 @php
