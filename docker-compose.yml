@@ -5,21 +5,14 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     ports:
-      - "${BRIDGE_PORT:-8080}:80"
+      - "${BRIDGE_PORT:-8080}:3000"
     volumes:
       - ${REPOS_PATH}:${REPOS_PATH}
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
     environment:
-      - APP_KEY=${APP_KEY}
-      - APP_URL=${APP_URL:-http://localhost}
-      - APP_ENV=production
-      - APP_DEBUG=false
-      - DB_CONNECTION=sqlite
-      - DB_DATABASE=/data/database.sqlite
-      - QUEUE_CONNECTION=database
+      - PORT=3000
+      - DB_PATH=/data/bridge.db
       - REPOS_PATH=${REPOS_PATH}
+      - SESSION_SECRET=${SESSION_SECRET:-bridge-secret-change-me}
       - BRIDGE_SSH_KEY_PATH=/data/ssh/id_rsa
-      - SESSION_DRIVER=${SESSION_DRIVER:-database}
-      - SESSION_COOKIE=bridge_session
-      - SESSION_SECURE_COOKIE=false
