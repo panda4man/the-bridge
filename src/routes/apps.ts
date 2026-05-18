@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { rm } from 'fs/promises';
 import { join } from 'path';
+import { spawn } from 'child_process';
 import GitService from '../services/gitService.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
@@ -9,6 +11,15 @@ import { storeRules, validateStore, updateRules, validateUpdate } from '../valid
 import { enqueueDeployJob } from '../queue.js';
 
 const router = Router();
+
+function runComposeDown(workDir: string, composeFile: string): Promise<void> {
+  return new Promise((resolve) => {
+    const proc = spawn('docker-compose', ['-f', composeFile, 'down'], { cwd: workDir });
+    const timer = setTimeout(() => { proc.kill('SIGKILL'); resolve(); }, 60000);
+    proc.on('close', () => { clearTimeout(timer); resolve(); });
+    proc.on('error', () => { clearTimeout(timer); resolve(); });
+  });
+}
 
 function reposPath(): string {
   return (process.env.REPOS_PATH || '/repos').replace(/\/$/, '');
@@ -63,7 +74,7 @@ router.get('/apps/:id', (req: Request, res: Response) => {
 router.get('/apps/:id/edit', (req: Request, res: Response) => {
   const app = AppModel.findById(Number(req.params.id));
   if (!app) { res.status(404).send('Not found'); return; }
-  res.render('apps/edit', { app, errors: {} });
+  res.render('apps/edit', { app, errors: {}, sourceExists: existsSync(app.path) });
 });
 
 router.put('/apps/:id',
@@ -83,9 +94,20 @@ router.put('/apps/:id',
   }
 );
 
-router.delete('/apps/:id', (req: Request, res: Response) => {
-  AppModel.remove(String(req.params.id));
-  req.flash('success', 'App deleted.');
+router.delete('/apps/:id', async (req: Request, res: Response) => {
+  const app = AppModel.findById(Number(req.params.id));
+  if (!app) { res.status(404).send('Not found'); return; }
+
+  if (existsSync(app.path)) {
+    const composeFile = join(app.path, 'docker-compose.yml');
+    if (existsSync(composeFile)) {
+      await runComposeDown(app.path, composeFile);
+    }
+    await rm(app.path, { recursive: true, force: true });
+  }
+
+  AppModel.remove(String(app.id));
+  req.flash('success', 'App removed.');
   res.redirect('/');
 });
 

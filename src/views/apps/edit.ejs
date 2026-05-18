@@ -23,9 +23,12 @@
         <a href="/apps/<%= app.id %>" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">Cancel</a>
     </div>
 </form>
+<% const _confirmMsg = sourceExists
+  ? `This will:\n1. Stop and remove Docker containers\n2. Delete source folder: ${app.path}\n3. Remove app from database\n\nContinue?`
+  : `Source folder not found at ${app.path}.\nThis will remove the app from the database only.\n\nContinue?` %>
 <form method="POST" action="/apps/<%= app.id %>" class="mt-6 max-w-xl">
     <input type="hidden" name="_method" value="DELETE">
-    <button type="submit" onclick="return confirm('Delete this app?')"
+    <button type="submit" onclick="return confirm(<%- JSON.stringify(_confirmMsg) %>)"
         class="text-red-600 text-sm hover:underline">Delete App</button>
 </form>
 <%- include('../layouts/footer') %>
