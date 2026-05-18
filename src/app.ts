@@ -14,6 +14,7 @@ const app: Application = express();
 app.set('view engine', 'ejs');
 app.set('views', join(__dirname, 'views'));
 
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride((req) => {
   if (req.body && '_method' in (req.body as Record<string, unknown>)) {
@@ -21,7 +22,7 @@ app.use(methodOverride((req) => {
     delete (req.body as Record<string, unknown>)['_method'];
     return method;
   }
-  return undefined;
+  return '';
 }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'bridge-secret',

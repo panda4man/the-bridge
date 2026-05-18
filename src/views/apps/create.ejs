@@ -1,7 +1,10 @@
 <%- include('../layouts/header') %>
 <h1 class="text-2xl font-bold mb-6">New App</h1>
 <form method="POST" action="/apps" class="bg-white rounded shadow p-6 space-y-4 max-w-xl"
-    x-data="{ relative: <%- JSON.stringify(old.path || '') %>, skip: <%= (old.skip_clone === '1' || old.skip_clone === 'true') ? 'true' : 'false' %> }">
+    x-data="{ relative: '', skip: false }"
+    x-init="relative = $el.dataset.path; skip = $el.dataset.skip === 'true'"
+    data-path="<%= old.path || '' %>"
+    data-skip="<%= (old.skip_clone === '1' || old.skip_clone === 'true') ? 'true' : 'false' %>">
     <div>
         <label class="block text-sm font-medium mb-1">Name</label>
         <input name="name" value="<%= old.name || '' %>" required

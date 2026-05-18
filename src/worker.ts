@@ -4,6 +4,8 @@ import type { JobRecord } from './types.js';
 
 const db = openDb();
 
+console.log(`Queue worker started (PID ${process.pid}). CTRL+C or kill ${process.pid} to stop.`);
+
 let running = true;
 
 process.on('SIGTERM', () => {

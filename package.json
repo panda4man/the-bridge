@@ -5,8 +5,8 @@
   "private": true,
   "main": "src/server.ts",
   "scripts": {
-    "start": "tsx src/server.ts",
-    "worker": "tsx src/worker.ts",
+    "start": "tsx --env-file=.env src/server.ts",
+    "worker": "tsx --env-file=.env src/worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

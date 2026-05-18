@@ -16,7 +16,8 @@ export default class GitService {
   }
 
   async clone(repoUrl: string, targetPath: string, branch: string): Promise<string> {
-    const git = simpleGit({ env: { ...process.env, ...this._sshEnv() } as NodeJS.ProcessEnv });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const git = simpleGit({ env: { ...process.env, ...this._sshEnv() } } as any);
     try {
       await git.clone(repoUrl, targetPath, ['--branch', branch, '-c', 'safe.directory=*']);
       return `Cloned ${repoUrl} into ${targetPath}`;
@@ -26,10 +27,8 @@ export default class GitService {
   }
 
   async pull(repoPath: string, branch: string): Promise<string> {
-    const git = simpleGit({
-      baseDir: repoPath,
-      env: { ...process.env, ...this._sshEnv() } as NodeJS.ProcessEnv,
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const git = simpleGit({ baseDir: repoPath, env: { ...process.env, ...this._sshEnv() } } as any);
     await git.raw(['config', 'safe.directory', '*']).catch(() => {});
     try {
       await git.pull('origin', branch);

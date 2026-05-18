@@ -20,12 +20,14 @@ Two processes required — run each in a separate terminal:
 
 ```bash
 # Terminal 1 — web server
-DB_PATH=./bridge.db REPOS_PATH=./repos npm start
+npm start
 # → http://localhost:3000
 
 # Terminal 2 — queue worker (processes deploy jobs)
-DB_PATH=./bridge.db REPOS_PATH=./repos npm run worker
+npm run worker
 ```
+
+Both scripts load `.env` automatically. Copy `.env.example` to `.env` to customise.
 
 ### Environment variables
 
