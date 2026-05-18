@@ -1,8 +1,8 @@
 <%- include('../layouts/header') %>
 <div
     x-data="{
-        log: <%- JSON.stringify(deployment.log || '') %>,
-        status: <%- JSON.stringify(deployment.status) %>,
+        log: <%= JSON.stringify(deployment.log || '') %>,
+        status: <%= JSON.stringify(deployment.status) %>,
         done: <%= ['success', 'failed'].includes(deployment.status) %>,
         init() {
             if (this.done) return;
