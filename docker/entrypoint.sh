@@ -12,7 +12,7 @@ chmod 700 /data/ssh
 if [ -S /var/run/docker.sock ]; then
     SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
     if ! getent group "$SOCK_GID" > /dev/null 2>&1; then
-        addgroup -g "$SOCK_GID" dockersock
+        addgroup --gid "$SOCK_GID" dockersock
     fi
 fi
 
