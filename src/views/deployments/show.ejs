@@ -1,30 +1,5 @@
 <%- include('../layouts/header') %>
-<div
-    x-data="{
-        log: <%= JSON.stringify(deployment.log || '') %>,
-        status: <%= JSON.stringify(deployment.status) %>,
-        done: <%= ['success', 'failed'].includes(deployment.status) %>,
-        init() {
-            if (this.done) return;
-            const es = new EventSource('/deployments/<%= deployment.id %>/stream');
-            es.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.text) {
-                    this.log += data.text;
-                    this.$nextTick(() => {
-                        const el = this.$refs.logbox;
-                        el.scrollTop = el.scrollHeight;
-                    });
-                }
-                if (data.done) {
-                    this.status = data.status;
-                    this.done = true;
-                    es.close();
-                }
-            };
-        }
-    }"
->
+<div x-data="{ log: <%= JSON.stringify(deployment.log || '') %>, status: <%= JSON.stringify(deployment.status) %>, done: <%= ['success', 'failed'].includes(deployment.status) %>, init() { if (this.done) return; const es = new EventSource('/deployments/<%= deployment.id %>/stream'); es.onmessage = (e) => { const data = JSON.parse(e.data); if (data.text) { this.log += data.text; this.$nextTick(() => { const el = this.$refs.logbox; el.scrollTop = el.scrollHeight; }); } if (data.done) { this.status = data.status; this.done = true; es.close(); } }; } }">
     <div class="flex items-center gap-3 mb-4">
         <a href="/apps/<%= deployment.app_id %>" class="text-gray-500 hover:text-gray-700 text-sm">← <%= deployment.app_name %></a>
         <span
