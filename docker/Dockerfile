@@ -1,13 +1,16 @@
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
-RUN apk add --no-cache \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     supervisor \
     git \
     openssh-client \
-    docker-cli \
-    docker-cli-compose \
-    && chmod a+rx /usr/libexec/docker/cli-plugins/docker-compose \
-    && ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose \
+    docker.io \
+    docker-compose \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /root/.docker \
     && echo '{}' > /root/.docker/config.json
 
