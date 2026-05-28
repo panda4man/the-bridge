@@ -132,4 +132,66 @@ services:
     writeCompose('version: "3"\n');
     expect(readPortBindings(workDir)).toEqual([]);
   });
+
+  it('interpolates ${VAR:-default} to default when .env missing', () => {
+    writeCompose(`
+services:
+  tagarr:
+    ports:
+      - "\${HOST_PORT:-8080}:\${BIND_PORT:-8080}"
+`);
+    expect(readPortBindings(workDir)).toEqual([
+      { service: 'tagarr', host_ip: undefined, host_port: '8080', container_port: '8080', protocol: 'tcp' },
+    ]);
+  });
+
+  it('interpolates ${VAR:-default} using .env override', () => {
+    writeCompose(`
+services:
+  tagarr:
+    ports:
+      - "\${HOST_PORT:-8080}:\${BIND_PORT:-8080}"
+`);
+    writeFileSync(join(workDir, '.env'), 'HOST_PORT=9000\nBIND_PORT=7000\n', 'utf-8');
+    expect(readPortBindings(workDir)).toEqual([
+      { service: 'tagarr', host_ip: undefined, host_port: '9000', container_port: '7000', protocol: 'tcp' },
+    ]);
+  });
+
+  it('interpolates quoted .env values', () => {
+    writeCompose(`
+services:
+  web:
+    ports:
+      - "\${HOST_PORT}:80"
+`);
+    writeFileSync(join(workDir, '.env'), 'HOST_PORT="9090"\n', 'utf-8');
+    expect(readPortBindings(workDir)).toEqual([
+      { service: 'web', host_ip: undefined, host_port: '9090', container_port: '80', protocol: 'tcp' },
+    ]);
+  });
+
+  it('skips ports whose container port is an unresolved variable', () => {
+    writeCompose(`
+services:
+  web:
+    ports:
+      - "8080:\${UNSET_PORT}"
+`);
+    expect(readPortBindings(workDir)).toEqual([]);
+  });
+
+  it('interpolates ${VAR} in long-form published field', () => {
+    writeCompose(`
+services:
+  api:
+    ports:
+      - target: 8000
+        published: "\${PUBLIC_PORT:-9000}"
+        protocol: tcp
+`);
+    expect(readPortBindings(workDir)).toEqual([
+      { service: 'api', host_ip: undefined, host_port: '9000', container_port: '8000', protocol: 'tcp' },
+    ]);
+  });
 });
