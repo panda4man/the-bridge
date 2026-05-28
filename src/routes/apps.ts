@@ -5,6 +5,7 @@ import { join } from 'path';
 import { spawn } from 'child_process';
 import GitService from '../services/gitService.js';
 import { writeBridgeOverlay } from '../services/composeOverlay.js';
+import { readPortBindings } from '../services/portBindings.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
 import { DeploymentStatus } from '../enums.js';
@@ -70,7 +71,8 @@ router.get('/apps/:id', (req: Request, res: Response) => {
   const app = AppModel.findById(Number(req.params.id));
   if (!app) { res.status(404).send('Not found'); return; }
   const deployments = DeploymentModel.listForApp(app.id);
-  res.render('apps/show', { app, deployments });
+  const ports = readPortBindings(app.path);
+  res.render('apps/show', { app, deployments, ports });
 });
 
 router.get('/apps/:id/edit', (req: Request, res: Response) => {

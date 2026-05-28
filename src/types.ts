@@ -25,6 +25,14 @@ export interface DeploymentRecord {
   app_status?: string;
 }
 
+export interface PortBinding {
+  service: string;
+  host_ip?: string;
+  host_port?: string;
+  container_port: string;
+  protocol: 'tcp' | 'udp';
+}
+
 export interface JobRecord {
   id: number;
   queue: string;

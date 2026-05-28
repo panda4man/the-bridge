@@ -19,6 +19,7 @@
     "express": "^4",
     "express-session": "^1",
     "express-validator": "^7",
+    "js-yaml": "^4.1.0",
     "method-override": "^3",
     "simple-git": "^3",
     "tsx": "^4.22.1"
@@ -29,6 +30,7 @@
     "@types/ejs": "^3.1.5",
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.19.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/method-override": "^3.0.0",
     "@types/node": "^25.8.0",
     "@types/supertest": "^7.2.0",
