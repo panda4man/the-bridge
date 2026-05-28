@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { vi } from 'vitest';
@@ -112,4 +112,40 @@ test('POST /apps with skip_clone fails if directory does not exist', async () =>
     .send({ name: 'Missing', repo_url: 'r', branch: 'main', path: 'nonexistent-99xyz', skip_clone: '1' });
   expect(res.status).toBe(422);
   expect(getDb().prepare('SELECT * FROM apps WHERE name = ?').get('Missing')).toBeFalsy();
+});
+
+test('POST /apps copies .env.example to .env when .env is absent', async () => {
+  const app = await makeApp();
+  const reposPath = process.env.REPOS_PATH || tmpdir();
+  const relPath = `env-example-${Date.now()}`;
+  const fullPath = join(reposPath, relPath);
+  mkdirSync(join(fullPath, '.git'), { recursive: true });
+  writeFileSync(join(fullPath, '.env.example'), 'APP_KEY=example\n');
+
+  const res = await request(app)
+    .post('/apps')
+    .type('form')
+    .send({ name: 'EnvCopy', repo_url: 'r', branch: 'main', path: relPath, skip_clone: '1' });
+  expect(res.status).toBe(302);
+  expect(existsSync(join(fullPath, '.env'))).toBe(true);
+  expect(readFileSync(join(fullPath, '.env'), 'utf-8')).toBe('APP_KEY=example\n');
+  rmSync(fullPath, { recursive: true, force: true });
+});
+
+test('POST /apps does not overwrite existing .env when .env.example present', async () => {
+  const app = await makeApp();
+  const reposPath = process.env.REPOS_PATH || tmpdir();
+  const relPath = `env-no-overwrite-${Date.now()}`;
+  const fullPath = join(reposPath, relPath);
+  mkdirSync(join(fullPath, '.git'), { recursive: true });
+  writeFileSync(join(fullPath, '.env.example'), 'APP_KEY=example\n');
+  writeFileSync(join(fullPath, '.env'), 'APP_KEY=real\n');
+
+  const res = await request(app)
+    .post('/apps')
+    .type('form')
+    .send({ name: 'EnvKeep', repo_url: 'r', branch: 'main', path: relPath, skip_clone: '1' });
+  expect(res.status).toBe(302);
+  expect(readFileSync(join(fullPath, '.env'), 'utf-8')).toBe('APP_KEY=real\n');
+  rmSync(fullPath, { recursive: true, force: true });
 });
