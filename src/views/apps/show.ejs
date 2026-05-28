@@ -135,10 +135,18 @@
                 : dep.status === 'failed'  ? 'bg-red-100 text-red-800'
                 : dep.status === 'running' ? 'bg-yellow-100 text-yellow-800'
                 : 'bg-gray-100 text-gray-600';
+    let durationStr = '—';
+    if (dep.started_at && dep.finished_at) {
+        const secs = Math.round((new Date(dep.finished_at) - new Date(dep.started_at)) / 1000);
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        durationStr = m > 0 ? `${m}m ${String(s).padStart(2,'0')}s` : `${s}s`;
+    }
 %>
 <div class="bg-white rounded shadow p-3 mb-2 flex items-center justify-between">
     <div class="flex items-center gap-3">
         <span class="text-xs px-2 py-1 rounded <%= badge %>"><%= dep.status %></span>
+        <span class="text-xs text-gray-400"><%= durationStr %></span>
         <span class="text-sm text-gray-500"><%= dep.created_at %></span>
     </div>
     <a href="/deployments/<%= dep.id %>" class="text-sm text-blue-600 hover:underline">View Log</a>
