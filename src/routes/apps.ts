@@ -4,6 +4,7 @@ import { rm } from 'fs/promises';
 import { join } from 'path';
 import { spawn } from 'child_process';
 import GitService from '../services/gitService.js';
+import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
 import { DeploymentStatus } from '../enums.js';
@@ -14,7 +15,8 @@ const router = Router();
 
 function runComposeDown(workDir: string, composeFile: string): Promise<void> {
   return new Promise((resolve) => {
-    const proc = spawn('docker-compose', ['-f', composeFile, 'down'], { cwd: workDir });
+    const overlayFile = writeBridgeOverlay(workDir);
+    const proc = spawn('docker-compose', ['-f', composeFile, '-f', overlayFile, 'down'], { cwd: workDir });
     const timer = setTimeout(() => { proc.kill('SIGKILL'); resolve(); }, 60000);
     proc.on('close', () => { clearTimeout(timer); resolve(); });
     proc.on('error', () => { clearTimeout(timer); resolve(); });
