@@ -31,8 +31,8 @@ export default class GitService {
     const git = simpleGit({ baseDir: repoPath, env: { ...process.env, ...this._sshEnv() } } as any);
     await git.raw(['config', 'safe.directory', '*']).catch(() => {});
     try {
-      await git.pull('origin', branch);
-      return `Pulled ${branch} in ${repoPath}`;
+      const output = await git.raw(['pull', 'origin', branch]);
+      return output.trim() || `Pulled ${branch} in ${repoPath}`;
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : String(err));
     }
