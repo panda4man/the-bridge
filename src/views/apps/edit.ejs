@@ -30,6 +30,39 @@
         <a href="/apps/<%= app.id %>" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">Cancel</a>
     </div>
 </form>
+<div class="mt-8 bg-white rounded shadow p-6 max-w-xl">
+    <h2 class="font-semibold mb-4">Auto-Deploy Webhook</h2>
+    <% if (app.webhook_secret) { %>
+    <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Webhook URL</label>
+        <div class="flex items-center gap-2">
+            <input readonly
+                value="<%= `${process.env.APP_URL || 'http://localhost:3000'}/apps/${app.id}/webhook` %>"
+                class="w-full font-mono text-sm border rounded px-3 py-2 bg-gray-50 text-gray-700">
+            <button type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)"
+                class="text-xs px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 shrink-0">Copy</button>
+        </div>
+    </div>
+    <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Secret</label>
+        <p class="text-sm text-gray-500 font-mono"><%= app.webhook_secret.slice(0,8) %>••••••••••••••••••••••••</p>
+    </div>
+    <form method="POST" action="/apps/<%= app.id %>/webhook-secret"
+          onsubmit="return confirm('Regenerate secret? Existing GitHub webhooks using the old secret will stop working.')">
+        <button type="submit" class="text-sm px-3 py-1.5 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
+            Regenerate Secret
+        </button>
+    </form>
+    <% } else { %>
+    <p class="text-sm text-gray-500 mb-3">No webhook secret yet. Generate one to enable auto-deploy on git push.</p>
+    <form method="POST" action="/apps/<%= app.id %>/webhook-secret">
+        <button type="submit" class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700">
+            Generate Webhook Secret
+        </button>
+    </form>
+    <% } %>
+    <p class="text-xs text-gray-400 mt-4">Add this URL as a GitHub webhook (push events, content type: application/json).</p>
+</div>
 <% const _confirmMsg = sourceExists
   ? `This will:\n1. Stop and remove Docker containers\n2. Delete source folder: ${app.path}\n3. Remove app from database\n\nContinue?`
   : `Source folder not found at ${app.path}.\nThis will remove the app from the database only.\n\nContinue?` %>
