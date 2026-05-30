@@ -18,6 +18,13 @@
         <label class="block text-sm font-medium mb-1">Local Path</label>
         <input name="path" value="<%= app.path %>" required class="w-full border rounded px-3 py-2">
     </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Health Check URL <span class="text-gray-400 font-normal">(optional)</span></label>
+        <input name="health_url" value="<%= app.health_url || '' %>"
+            placeholder="https://myapp.example.com/health"
+            class="w-full border rounded px-3 py-2">
+        <p class="text-xs text-gray-400 mt-1">Pinged every 60s. Must return 2xx to be considered healthy.</p>
+    </div>
     <div class="flex gap-3">
         <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save</button>
         <a href="/apps/<%= app.id %>" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">Cancel</a>

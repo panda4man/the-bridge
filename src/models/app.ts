@@ -6,8 +6,8 @@ export function create(data: Partial<AppRecord>): AppRecord {
   const db = getDb();
   const now = new Date().toISOString();
   const result = db.prepare(
-    'INSERT INTO apps (name, repo_url, branch, path, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(data.name, data.repo_url, data.branch, data.path, data.status ?? AppStatus.Idle, now, now);
+    'INSERT INTO apps (name, repo_url, branch, path, health_url, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(data.name, data.repo_url, data.branch, data.path, data.health_url ?? null, data.status ?? AppStatus.Idle, now, now);
   return findById(result.lastInsertRowid as number) as AppRecord;
 }
 
@@ -22,8 +22,8 @@ export function list(): AppRecord[] {
 export function update(id: number | string, data: Partial<AppRecord>): AppRecord | null {
   const now = new Date().toISOString();
   getDb().prepare(
-    'UPDATE apps SET name = ?, repo_url = ?, branch = ?, path = ?, updated_at = ? WHERE id = ?'
-  ).run(data.name, data.repo_url, data.branch, data.path, now, id);
+    'UPDATE apps SET name = ?, repo_url = ?, branch = ?, path = ?, health_url = ?, updated_at = ? WHERE id = ?'
+  ).run(data.name, data.repo_url, data.branch, data.path, data.health_url ?? null, now, id);
   return findById(Number(id));
 }
 

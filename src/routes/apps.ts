@@ -9,6 +9,7 @@ import { readPortBindings } from '../services/portBindings.js';
 import { getContainerStatus } from '../services/containerStatus.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
+import * as HealthCheckModel from '../models/healthCheck.js';
 import { DeploymentStatus } from '../enums.js';
 import { storeRules, validateStore, updateRules, validateUpdate } from '../validators/appValidators.js';
 import { enqueueDeployJob } from '../queue.js';
@@ -31,7 +32,11 @@ function reposPath(): string {
 
 router.get('/', (req: Request, res: Response) => {
   const apps = AppModel.list();
-  res.render('apps/index', { apps });
+  const appsWithHealth = apps.map(app => {
+    const latest = HealthCheckModel.findLatest(app.id);
+    return { ...app, last_health_status: latest?.status ?? null };
+  });
+  res.render('apps/index', { apps: appsWithHealth });
 });
 
 router.get('/apps/create', (req: Request, res: Response) => {
@@ -73,7 +78,8 @@ router.get('/apps/:id', (req: Request, res: Response) => {
   if (!app) { res.status(404).send('Not found'); return; }
   const deployments = DeploymentModel.listForApp(app.id);
   const ports = readPortBindings(app.path);
-  res.render('apps/show', { app, deployments, ports });
+  const latestHealth = HealthCheckModel.findLatest(app.id);
+  res.render('apps/show', { app, deployments, ports, latestHealth });
 });
 
 router.get('/apps/:id/edit', (req: Request, res: Response) => {
@@ -92,8 +98,10 @@ router.put('/apps/:id',
   updateRules,
   validateUpdate,
   (req: Request, res: Response) => {
-    const { name, repo_url, branch, path } = req.body as { name: string; repo_url: string; branch: string; path: string };
-    AppModel.update(String(req.params.id), { name, repo_url, branch, path });
+    const { name, repo_url, branch, path, health_url } = req.body as {
+      name: string; repo_url: string; branch: string; path: string; health_url?: string;
+    };
+    AppModel.update(String(req.params.id), { name, repo_url, branch, path, health_url: health_url || null });
     req.flash('success', 'App updated.');
     res.redirect(`/apps/${req.params.id}`);
   }

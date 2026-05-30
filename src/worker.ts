@@ -1,6 +1,7 @@
 import { openDb } from './db.js';
 import { deployApp } from './jobs/deployApp.js';
 import type { JobRecord } from './types.js';
+import { runHealthChecks } from './services/healthPoller.js';
 
 const db = openDb();
 
@@ -41,4 +42,16 @@ async function poll(): Promise<void> {
   }
 }
 
+async function pollHealth(): Promise<void> {
+  while (running) {
+    try {
+      await runHealthChecks();
+    } catch (err) {
+      console.error('Health check error:', err instanceof Error ? err.message : String(err));
+    }
+    await new Promise(r => setTimeout(r, 60000));
+  }
+}
+
 poll().catch(console.error);
+pollHealth().catch(console.error);
