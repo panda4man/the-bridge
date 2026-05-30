@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { rm } from 'fs/promises';
 import { join } from 'path';
 import { spawn } from 'child_process';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import GitService from '../services/gitService.js';
 import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import { readPortBindings } from '../services/portBindings.js';
@@ -13,6 +14,7 @@ import * as HealthCheckModel from '../models/healthCheck.js';
 import { DeploymentStatus } from '../enums.js';
 import { storeRules, validateStore, updateRules, validateUpdate } from '../validators/appValidators.js';
 import { enqueueDeployJob } from '../queue.js';
+import { getDb } from '../db.js';
 
 const router = Router();
 
@@ -183,6 +185,45 @@ router.post('/apps/:id/rollback', (req: Request, res: Response) => {
   });
   enqueueDeployJob(dep.id);
   res.redirect(`/deployments/${dep.id}`);
+});
+
+router.post('/apps/:id/webhook', (req: Request, res: Response) => {
+  const app = AppModel.findById(Number(req.params.id));
+  if (!app) { res.status(404).json({ error: 'Not found' }); return; }
+  if (!app.webhook_secret) { res.status(400).json({ error: 'No webhook secret configured.' }); return; }
+
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+  const sig = req.headers['x-hub-signature-256'] as string | undefined;
+  if (!sig) { res.status(401).json({ error: 'Missing signature' }); return; }
+
+  const expected = 'sha256=' + createHmac('sha256', app.webhook_secret).update(rawBody).digest('hex');
+  const expectedBuf = Buffer.from(expected);
+  const receivedBuf = Buffer.from(sig);
+  const valid = expectedBuf.length === receivedBuf.length &&
+    timingSafeEqual(expectedBuf, receivedBuf);
+  if (!valid) { res.status(401).json({ error: 'Invalid signature' }); return; }
+
+  let payload: { ref?: string } = {};
+  try { payload = JSON.parse(rawBody.toString()); } catch { /* ignore */ }
+  const pushedBranch = payload.ref?.replace('refs/heads/', '');
+  if (pushedBranch && pushedBranch !== app.branch) {
+    res.json({ skipped: true, reason: `Push was to ${pushedBranch}, app tracks ${app.branch}` });
+    return;
+  }
+
+  const dep = DeploymentModel.create({ app_id: app.id, status: DeploymentStatus.Pending });
+  enqueueDeployJob(dep.id);
+  res.status(204).send();
+});
+
+router.post('/apps/:id/webhook-secret', (req: Request, res: Response) => {
+  const app = AppModel.findById(Number(req.params.id));
+  if (!app) { res.status(404).json({ error: 'Not found' }); return; }
+  const secret = randomBytes(32).toString('hex');
+  getDb().prepare('UPDATE apps SET webhook_secret = ?, updated_at = ? WHERE id = ?')
+    .run(secret, new Date().toISOString(), app.id);
+  req.flash('success', 'Webhook secret regenerated.');
+  res.redirect(`/apps/${app.id}/edit`);
 });
 
 export default router;
