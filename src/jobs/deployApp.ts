@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import * as AppModel from '../models/app.js';
@@ -72,7 +72,7 @@ export async function deployApp(deploymentId: number, options: DeployAppOptions 
       DeploymentModel.appendLog(deploymentId, `=== git checkout ${dep.rollback_sha} ===\n`);
       const fetchOut = await git.pull(app.path, app.branch);
       DeploymentModel.appendLog(deploymentId, fetchOut + '\n');
-      execSync(`git checkout ${dep.rollback_sha}`, { cwd: app.path });
+      execFileSync('git', ['checkout', dep.rollback_sha], { cwd: app.path });
       DeploymentModel.appendLog(deploymentId, `Checked out ${dep.rollback_sha}\n`);
     } else {
       DeploymentModel.appendLog(deploymentId, '=== git pull ===\n');
