@@ -21,7 +21,7 @@ test('GET / returns 200 with apps list', async () => {
   const app = await makeApp();
   const res = await request(app).get('/');
   expect(res.status).toBe(200);
-  expect(res.text).toContain('Apps');
+  expect(res.text).toContain('Applications');
 });
 
 test('GET /apps/create returns 200', async () => {

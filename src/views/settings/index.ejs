@@ -1,23 +1,22 @@
 <%- include('../layouts/header') %>
-<h1 class="text-2xl font-bold mb-6">Settings</h1>
+<h1 class="text-xl font-bold tracking-widest uppercase mb-6" style="color:var(--color-brand)">Settings</h1>
 
-<form method="POST" action="/settings" class="bg-white rounded shadow p-6 space-y-4 max-w-xl">
+<form method="POST" action="/settings" class="lcars-card lcars-card--sciences p-6 space-y-4 max-w-xl">
     <div>
-        <label class="block text-sm font-medium mb-1">Slack Webhook URL</label>
+        <label class="lcars-label">Slack Webhook URL</label>
         <input name="slack_webhook_url"
             value="<%= slackWebhookUrl %>"
             placeholder="https://hooks.slack.com/services/…"
-            class="w-full border rounded px-3 py-2 font-mono text-sm">
-        <p class="text-xs text-gray-400 mt-1">
+            class="lcars-input font-mono text-sm">
+        <p class="text-xs lcars-muted mt-1">
             Receives a message when any deployment succeeds or fails.
-            <a href="https://api.slack.com/messaging/webhooks" class="underline" target="_blank">How to create one →</a>
+            <a href="https://api.slack.com/messaging/webhooks" style="color:var(--color-sciences)" target="_blank">How to create one →</a>
         </p>
     </div>
     <div class="flex gap-3">
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save</button>
+        <button type="submit" class="lcars-btn lcars-btn--primary">Save</button>
         <% if (slackWebhookUrl) { %>
-        <button type="submit" name="test_slack" value="1"
-            class="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200">
+        <button type="submit" name="test_slack" value="1" class="lcars-btn lcars-btn--secondary">
             Send Test
         </button>
         <% } %>

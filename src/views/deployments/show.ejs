@@ -1,20 +1,20 @@
 <%- include('../layouts/header') %>
 <div x-data="{ log: <%= JSON.stringify(deployment.log || '') %>, status: <%= JSON.stringify(deployment.status) %>, done: <%= ['success', 'failed'].includes(deployment.status) %>, init() { if (this.done) return; const es = new EventSource('/deployments/<%= deployment.id %>/stream'); es.onmessage = (e) => { const data = JSON.parse(e.data); if (data.text) { this.log += data.text; this.$nextTick(() => { const el = this.$refs.logbox; el.scrollTop = el.scrollHeight; }); } if (data.done) { this.status = data.status; this.done = true; es.close(); } }; } }">
-    <div class="flex items-center gap-3 mb-4">
-        <a href="/apps/<%= deployment.app_id %>" class="text-gray-500 hover:text-gray-700 text-sm">← <%= deployment.app_name %></a>
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <a href="/apps/<%= deployment.app_id %>" class="lcars-muted text-sm hover:underline">← <%= deployment.app_name %></a>
         <span
-            class="text-xs px-2 py-1 rounded"
+            class="lcars-badge"
             :class="{
-                'bg-green-100 text-green-800':   status === 'success',
-                'bg-red-100 text-red-800':       status === 'failed',
-                'bg-yellow-100 text-yellow-800': status === 'running',
-                'bg-gray-100 text-gray-600':     status === 'pending'
+                'lcars-badge--success': status === 'success',
+                'lcars-badge--failed':  status === 'failed',
+                'lcars-badge--running': status === 'running',
+                'lcars-badge--pending': status === 'pending'
             }"
             x-text="status"
         ></span>
         <% if (['running', 'pending'].includes(deployment.status)) { %>
         <form method="POST" action="/deployments/<%= deployment.id %>/reset" x-show="!done">
-            <button type="submit" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+            <button type="submit" class="lcars-btn lcars-btn--danger lcars-btn--sm"
                 onclick="return confirm('Mark this deployment as failed?')">
                 Reset
             </button>
@@ -25,7 +25,7 @@
     <pre
         x-ref="logbox"
         x-text="log || 'Waiting for output...'"
-        class="bg-gray-900 text-green-400 rounded p-4 text-sm font-mono overflow-auto h-[600px] whitespace-pre-wrap"
+        class="lcars-log"
     ></pre>
 </div>
 <%- include('../layouts/footer') %>

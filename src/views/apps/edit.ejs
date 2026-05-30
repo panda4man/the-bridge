@@ -1,74 +1,70 @@
 <%- include('../layouts/header') %>
-<h1 class="text-2xl font-bold mb-6">Edit <%= app.name %></h1>
-<form method="POST" action="/apps/<%= app.id %>" class="bg-white rounded shadow p-6 space-y-4 max-w-xl">
+<h1 class="text-xl font-bold tracking-widest uppercase mb-6" style="color:var(--color-brand)">Edit <%= app.name %></h1>
+<form method="POST" action="/apps/<%= app.id %>" class="lcars-card p-6 space-y-4 max-w-xl">
     <input type="hidden" name="_method" value="PUT">
     <div>
-        <label class="block text-sm font-medium mb-1">Name</label>
-        <input name="name" value="<%= app.name %>" required class="w-full border rounded px-3 py-2">
+        <label class="lcars-label">Name</label>
+        <input name="name" value="<%= app.name %>" required class="lcars-input">
     </div>
     <div>
-        <label class="block text-sm font-medium mb-1">Repo URL</label>
-        <input name="repo_url" value="<%= app.repo_url %>" required class="w-full border rounded px-3 py-2">
+        <label class="lcars-label">Repo URL</label>
+        <input name="repo_url" value="<%= app.repo_url %>" required class="lcars-input">
     </div>
     <div>
-        <label class="block text-sm font-medium mb-1">Branch</label>
-        <input name="branch" value="<%= app.branch %>" required class="w-full border rounded px-3 py-2">
+        <label class="lcars-label">Branch</label>
+        <input name="branch" value="<%= app.branch %>" required class="lcars-input">
     </div>
     <div>
-        <label class="block text-sm font-medium mb-1">Local Path</label>
-        <input name="path" value="<%= app.path %>" required class="w-full border rounded px-3 py-2">
+        <label class="lcars-label">Local Path</label>
+        <input name="path" value="<%= app.path %>" required class="lcars-input">
     </div>
     <div>
-        <label class="block text-sm font-medium mb-1">Health Check URL <span class="text-gray-400 font-normal">(optional)</span></label>
+        <label class="lcars-label">Health Check URL <span class="lcars-muted font-normal normal-case">(optional)</span></label>
         <input name="health_url" value="<%= app.health_url || '' %>"
-            placeholder="https://myapp.example.com/health"
-            class="w-full border rounded px-3 py-2">
-        <p class="text-xs text-gray-400 mt-1">Pinged every 60s. Must return 2xx to be considered healthy.</p>
+            placeholder="https://myapp.example.com/health" class="lcars-input">
+        <p class="text-xs lcars-muted mt-1">Pinged every 60s. Must return 2xx to be considered healthy.</p>
     </div>
     <div class="flex gap-3">
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save</button>
-        <a href="/apps/<%= app.id %>" class="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300">Cancel</a>
+        <button type="submit" class="lcars-btn lcars-btn--primary">Save</button>
+        <a href="/apps/<%= app.id %>" class="lcars-btn lcars-btn--secondary">Cancel</a>
     </div>
 </form>
-<div class="mt-8 bg-white rounded shadow p-6 max-w-xl">
-    <h2 class="font-semibold mb-4">Auto-Deploy Webhook</h2>
+
+<div class="mt-6 lcars-card lcars-card--sciences p-6 max-w-xl">
+    <h2 class="lcars-section-header">Auto-Deploy Webhook</h2>
     <% if (app.webhook_secret) { %>
     <div class="mb-4">
-        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Webhook URL</label>
+        <label class="lcars-label">Webhook URL</label>
         <div class="flex items-center gap-2">
-            <input readonly
-                value="<%= `${process.env.APP_URL || 'http://localhost:3000'}/apps/${app.id}/webhook` %>"
-                class="w-full font-mono text-sm border rounded px-3 py-2 bg-gray-50 text-gray-700">
+            <input readonly value="<%= `${process.env.APP_URL || 'http://localhost:3000'}/apps/${app.id}/webhook` %>"
+                class="lcars-input font-mono text-sm">
             <button type="button" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)"
-                class="text-xs px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 shrink-0">Copy</button>
+                class="lcars-btn lcars-btn--secondary lcars-btn--sm shrink-0">Copy</button>
         </div>
     </div>
     <div class="mb-4">
-        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">Secret</label>
-        <p class="text-sm text-gray-500 font-mono"><%= app.webhook_secret.slice(0,8) %>••••••••••••••••••••••••</p>
+        <label class="lcars-label">Secret</label>
+        <p class="font-mono text-sm lcars-muted"><%= app.webhook_secret.slice(0,8) %>••••••••••••••••••••••••</p>
     </div>
     <form method="POST" action="/apps/<%= app.id %>/webhook-secret"
           onsubmit="return confirm('Regenerate secret? Existing GitHub webhooks using the old secret will stop working.')">
-        <button type="submit" class="text-sm px-3 py-1.5 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
-            Regenerate Secret
-        </button>
+        <button type="submit" class="lcars-btn lcars-btn--warning lcars-btn--sm">Regenerate Secret</button>
     </form>
     <% } else { %>
-    <p class="text-sm text-gray-500 mb-3">No webhook secret yet. Generate one to enable auto-deploy on git push.</p>
+    <p class="text-sm lcars-muted mb-3">No webhook secret yet. Generate one to enable auto-deploy on git push.</p>
     <form method="POST" action="/apps/<%= app.id %>/webhook-secret">
-        <button type="submit" class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700">
-            Generate Webhook Secret
-        </button>
+        <button type="submit" class="lcars-btn lcars-btn--primary">Generate Webhook Secret</button>
     </form>
     <% } %>
-    <p class="text-xs text-gray-400 mt-4">Add this URL as a GitHub webhook (push events, content type: application/json).</p>
+    <p class="text-xs lcars-muted mt-4">Add this URL as a GitHub webhook (push events, content type: application/json).</p>
 </div>
+
 <% const _confirmMsg = sourceExists
   ? `This will:\n1. Stop and remove Docker containers\n2. Delete source folder: ${app.path}\n3. Remove app from database\n\nContinue?`
   : `Source folder not found at ${app.path}.\nThis will remove the app from the database only.\n\nContinue?` %>
 <form method="POST" action="/apps/<%= app.id %>" class="mt-6 max-w-xl">
     <input type="hidden" name="_method" value="DELETE">
     <button type="submit" onclick="return confirm(<%- JSON.stringify(_confirmMsg) %>)"
-        class="text-red-600 text-sm hover:underline">Delete App</button>
+        class="lcars-btn lcars-btn--danger lcars-btn--sm">Delete App</button>
 </form>
 <%- include('../layouts/footer') %>

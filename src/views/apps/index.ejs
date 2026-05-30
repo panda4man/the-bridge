@@ -1,39 +1,37 @@
 <%- include('../layouts/header') %>
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold">Apps</h1>
-    <a href="/apps/create" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">New App</a>
+    <h1 class="text-xl font-bold tracking-widest uppercase" style="color:var(--color-brand)">Applications</h1>
+    <a href="/apps/create" class="lcars-btn lcars-btn--primary lcars-btn--sm">+ New App</a>
 </div>
 <% if (apps.length === 0) { %>
-<p class="text-gray-500">No apps yet. <a href="/apps/create" class="text-blue-600 underline">Create one.</a></p>
+<p class="lcars-muted text-sm">No apps yet. <a href="/apps/create" style="color:var(--color-sciences)">Create one.</a></p>
 <% } else { %>
 <% apps.forEach(function(app) {
-    const badge = app.status === 'success' ? 'bg-green-100 text-green-800'
-                : app.status === 'failed'  ? 'bg-red-100 text-red-800'
-                : app.status === 'deploying' ? 'bg-yellow-100 text-yellow-800'
-                : 'bg-gray-100 text-gray-600';
-    const healthBadge = !app.health_url ? null
-                      : app.last_health_status === 'up'   ? 'bg-blue-100 text-blue-800'
-                      : app.last_health_status === 'down' ? 'bg-red-100 text-red-800'
-                      : 'bg-gray-100 text-gray-500';
-    const healthLabel = !app.health_url ? null
-                      : app.last_health_status === 'up'   ? '● healthy'
-                      : app.last_health_status === 'down' ? '● down'
+    const statusClass = app.status === 'success'   ? 'lcars-badge--success'
+                      : app.status === 'failed'    ? 'lcars-badge--failed'
+                      : app.status === 'deploying' ? 'lcars-badge--deploying'
+                      : 'lcars-badge--idle';
+    const healthClass = !app.health_url                        ? null
+                      : app.last_health_status === 'up'        ? 'lcars-badge--health-up'
+                      : app.last_health_status === 'down'      ? 'lcars-badge--health-down'
+                      : 'lcars-badge--health-unknown';
+    const healthLabel = !app.health_url                        ? null
+                      : app.last_health_status === 'up'        ? '● healthy'
+                      : app.last_health_status === 'down'      ? '● down'
                       : '○ checking';
 %>
-<div class="bg-white rounded shadow p-4 mb-3 flex items-center justify-between">
+<div class="lcars-card p-4 mb-3 flex items-center justify-between">
     <div>
-        <a href="/apps/<%= app.id %>" class="font-semibold text-blue-700 hover:underline"><%= app.name %></a>
-        <span class="ml-2 text-xs text-gray-400"><%= app.path %></span>
+        <a href="/apps/<%= app.id %>" class="font-semibold hover:underline" style="color:var(--color-sciences)"><%= app.name %></a>
+        <span class="ml-2 text-xs lcars-muted"><%= app.path %></span>
     </div>
     <div class="flex items-center gap-3">
-        <span class="text-xs px-2 py-1 rounded <%= badge %>"><%= app.status %></span>
-        <% if (healthBadge) { %>
-        <span class="text-xs px-2 py-1 rounded <%= healthBadge %>"><%= healthLabel %></span>
-        <% } %>
+        <% if (healthClass) { %><span class="lcars-badge <%= healthClass %>"><%= healthLabel %></span><% } %>
+        <span class="lcars-badge <%= statusClass %>"><%= app.status %></span>
         <form method="POST" action="/apps/<%= app.id %>/deploy">
-            <button class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Deploy</button>
+            <button class="lcars-btn lcars-btn--deploy lcars-btn--sm">Deploy</button>
         </form>
-        <a href="/apps/<%= app.id %>/edit" class="text-sm text-gray-400 hover:text-gray-700">Edit</a>
+        <a href="/apps/<%= app.id %>/edit" class="lcars-btn lcars-btn--secondary lcars-btn--sm">Edit</a>
     </div>
 </div>
 <% }) %>
