@@ -6,6 +6,7 @@ import * as DeploymentModel from '../models/deployment.js';
 import GitService from '../services/gitService.js';
 import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import { AppStatus, DeploymentStatus } from '../enums.js';
+import { notifyDeployment } from '../services/slackNotifier.js';
 
 type ComposeRunner = (subCmd: string, workDir: string, onOutput: (chunk: string) => void) => Promise<number>;
 
@@ -102,10 +103,14 @@ export async function deployApp(deploymentId: number, options: DeployAppOptions 
 
     DeploymentModel.update(deploymentId, { status: DeploymentStatus.Success, finished_at: new Date().toISOString() });
     AppModel.updateStatus(app.id, AppStatus.Success);
+    const successDep = DeploymentModel.findById(deploymentId)!;
+    notifyDeployment(successDep).catch(console.error);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     DeploymentModel.appendLog(deploymentId, `\nERROR: ${message}\n`);
     DeploymentModel.update(deploymentId, { status: DeploymentStatus.Failed, finished_at: new Date().toISOString() });
     AppModel.updateStatus(app.id, AppStatus.Failed);
+    const failedDep = DeploymentModel.findById(deploymentId)!;
+    notifyDeployment(failedDep).catch(console.error);
   }
 }
