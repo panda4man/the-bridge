@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import appsRouter from './routes/apps.js';
 import deploymentsRouter from './routes/deployments.js';
+import settingsRouter from './routes/settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,5 +40,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use('/', appsRouter);
 app.use('/', deploymentsRouter);
+app.use('/', settingsRouter);
 
 export default app;
