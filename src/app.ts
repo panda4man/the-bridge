@@ -38,6 +38,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+app.use(express.static(join(__dirname, '..', 'public')));
+
 app.use('/', appsRouter);
 app.use('/', deploymentsRouter);
 app.use('/', settingsRouter);

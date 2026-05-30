@@ -1,0 +1,265 @@
+/* ==========================================================
+   THE BRIDGE — LCARS Theme (Star Trek TNG)
+   ========================================================== */
+
+:root {
+  --color-brand:    #FF9900;
+  --color-command:  #CC0000;
+  --color-sciences: #3399FF;
+  --color-ops:      #FFCC00;
+
+  --color-bg:          #F4F4F4;
+  --color-surface:     #FFFFFF;
+  --color-surface-alt: #EFEFEF;
+  --color-text:        #1A1A1A;
+  --color-text-muted:  #666666;
+  --color-border:      #DDDDDD;
+  --color-log-bg:      #0A0A0A;
+  --color-log-text:    #33FF33;
+}
+
+[data-theme="dark"] {
+  --color-bg:          #0D0D0D;
+  --color-surface:     #1A1A1A;
+  --color-surface-alt: #242424;
+  --color-text:        #F0E6D0;
+  --color-text-muted:  #888888;
+  --color-border:      #333333;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg:          #0D0D0D;
+    --color-surface:     #1A1A1A;
+    --color-surface-alt: #242424;
+    --color-text:        #F0E6D0;
+    --color-text-muted:  #888888;
+    --color-border:      #333333;
+  }
+}
+
+/* --- Base --- */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* --- Nav --- */
+.lcars-nav {
+  background-color: #000;
+  border-bottom: 3px solid var(--color-brand);
+  padding: 0.5rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.lcars-nav__brand {
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+  text-decoration: none;
+}
+
+.lcars-nav__link {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #888;
+  text-decoration: none;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.lcars-nav__link:hover {
+  background: var(--color-brand);
+  color: #000;
+}
+
+.lcars-nav__spacer { flex: 1; }
+
+.lcars-nav__theme-btn {
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.lcars-nav__theme-btn:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+/* --- Cards / Panels --- */
+.lcars-card {
+  background: var(--color-surface);
+  border-radius: 0.375rem;
+  border-left: 4px solid var(--color-brand);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.lcars-card--command  { border-left-color: var(--color-command); }
+.lcars-card--sciences { border-left-color: var(--color-sciences); }
+.lcars-card--ops      { border-left-color: var(--color-ops); }
+
+/* --- Section Headers --- */
+.lcars-section-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+  border-left: 3px solid var(--color-brand);
+  padding-left: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* --- Badges --- */
+.lcars-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lcars-badge--success   { background: var(--color-sciences); color: #000; }
+.lcars-badge--failed    { background: var(--color-command);  color: #fff; }
+.lcars-badge--running   { background: var(--color-ops);      color: #000; }
+.lcars-badge--pending   { background: #444;                  color: #ccc; }
+.lcars-badge--idle      { background: #333;                  color: #aaa; }
+.lcars-badge--deploying { background: var(--color-ops);      color: #000; }
+
+.lcars-badge--health-up      { background: var(--color-sciences); color: #000; }
+.lcars-badge--health-down    { background: var(--color-command);  color: #fff; }
+.lcars-badge--health-unknown { background: #444;                  color: #999; }
+
+.lcars-badge--container-running    { background: var(--color-sciences); color: #000; }
+.lcars-badge--container-exited     { background: var(--color-command);  color: #fff; }
+.lcars-badge--container-restarting { background: var(--color-ops);      color: #000; }
+.lcars-badge--container-unknown    { background: #444;                  color: #999; }
+
+/* --- Buttons --- */
+.lcars-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.lcars-btn:hover    { opacity: 0.85; }
+.lcars-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.lcars-btn--primary   { background: var(--color-brand);       color: #000; }
+.lcars-btn--deploy    { background: var(--color-sciences);    color: #000; }
+.lcars-btn--secondary { background: var(--color-surface-alt); color: var(--color-text); border: 1px solid var(--color-border); }
+.lcars-btn--danger    { background: var(--color-command);     color: #fff; }
+.lcars-btn--warning   { background: var(--color-ops);         color: #000; }
+.lcars-btn--sm { padding: 0.25rem 0.75rem; font-size: 0.7rem; }
+
+/* --- Inputs --- */
+.lcars-input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.lcars-input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 2px rgba(255, 153, 0, 0.2);
+}
+
+.lcars-input--error { border-color: var(--color-command); }
+
+.lcars-input-prefix {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-right: none;
+  color: var(--color-text-muted);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: 0.25rem 0 0 0.25rem;
+  white-space: nowrap;
+}
+
+.lcars-input--prefix-group {
+  display: flex;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.lcars-input--prefix-group .lcars-input {
+  border: none;
+  border-radius: 0;
+}
+
+/* --- Labels --- */
+.lcars-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+/* --- Flash Messages --- */
+.lcars-flash--success {
+  background: rgba(51, 153, 255, 0.15);
+  border-left: 3px solid var(--color-sciences);
+  color: var(--color-sciences);
+  padding: 0.6rem 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+/* --- Log output --- */
+.lcars-log {
+  background: var(--color-log-bg);
+  color: var(--color-log-text);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+  font-size: 0.8rem;
+  overflow: auto;
+  height: 600px;
+  white-space: pre-wrap;
+}
+
+/* --- Divider --- */
+.lcars-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1rem 0;
+}
+
+/* --- Muted text --- */
+.lcars-muted { color: var(--color-text-muted); }
