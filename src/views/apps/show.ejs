@@ -126,6 +126,29 @@
     </dl>
 </div>
 
+<h2 class="font-semibold mb-3 mt-6">Containers</h2>
+<div x-data="{ containers: [], loaded: false, async load() { const r = await fetch('/apps/<%= app.id %>/containers'); const d = await r.json(); this.containers = d.containers || []; this.loaded = true; } }" x-init="load()">
+  <div x-show="!loaded" class="text-sm text-gray-400">Loading…</div>
+  <div x-show="loaded && containers.length === 0" class="text-sm text-gray-400">No containers found (app may not be running).</div>
+  <template x-for="c in containers" :key="c.name">
+    <div class="bg-white rounded shadow p-3 mb-2 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="font-mono text-sm" x-text="c.service"></span>
+        <span class="text-xs px-2 py-1 rounded"
+          :class="{
+            'bg-blue-100 text-blue-800':   c.state === 'running',
+            'bg-red-100 text-red-800':     c.state === 'exited',
+            'bg-yellow-100 text-yellow-800': c.state === 'restarting',
+            'bg-gray-100 text-gray-600':   !['running','exited','restarting'].includes(c.state)
+          }"
+          x-text="c.state"></span>
+        <span class="text-xs text-gray-400 font-mono" x-text="c.status"></span>
+      </div>
+      <span class="text-xs text-gray-400 font-mono" x-text="c.ports"></span>
+    </div>
+  </template>
+</div>
+
 <h2 class="font-semibold mb-3">Deploy History</h2>
 <% if (deployments.length === 0) { %>
 <p class="text-gray-500 text-sm">No deployments yet.</p>

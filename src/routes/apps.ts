@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import GitService from '../services/gitService.js';
 import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import { readPortBindings } from '../services/portBindings.js';
+import { getContainerStatus } from '../services/containerStatus.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
 import { DeploymentStatus } from '../enums.js';
@@ -150,6 +151,12 @@ router.post('/apps/:id/deploy', (req: Request, res: Response) => {
   const dep = DeploymentModel.create({ app_id: app.id, status: DeploymentStatus.Pending });
   enqueueDeployJob(dep.id);
   res.redirect(`/deployments/${dep.id}`);
+});
+
+router.get('/apps/:id/containers', (req: Request, res: Response) => {
+  const app = AppModel.findById(Number(req.params.id));
+  if (!app) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ containers: getContainerStatus(app.path) });
 });
 
 export default router;

@@ -33,6 +33,14 @@ export interface PortBinding {
   protocol: 'tcp' | 'udp';
 }
 
+export interface ContainerInfo {
+  name: string;
+  service: string;
+  state: string;
+  status: string;
+  ports: string;
+}
+
 export interface JobRecord {
   id: number;
   queue: string;
