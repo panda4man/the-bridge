@@ -167,4 +167,22 @@ router.get('/apps/:id/containers', (req: Request, res: Response) => {
   res.json({ containers: getContainerStatus(app.path) });
 });
 
+router.post('/apps/:id/rollback', (req: Request, res: Response) => {
+  const app = AppModel.findById(Number(req.params.id));
+  if (!app) { res.status(404).send('Not found'); return; }
+
+  const { deployment_id } = req.body as { deployment_id: string };
+  const source = DeploymentModel.findById(Number(deployment_id));
+  if (!source || source.app_id !== app.id) { res.status(404).send('Not found'); return; }
+  if (!source.commit_sha) { res.status(400).send('Deployment has no commit SHA — cannot rollback.'); return; }
+
+  const dep = DeploymentModel.create({
+    app_id: app.id,
+    status: DeploymentStatus.Pending,
+    rollback_sha: source.commit_sha,
+  });
+  enqueueDeployJob(dep.id);
+  res.redirect(`/deployments/${dep.id}`);
+});
+
 export default router;

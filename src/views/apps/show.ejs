@@ -167,12 +167,24 @@
     }
 %>
 <div class="bg-white rounded shadow p-3 mb-2 flex items-center justify-between">
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 flex-wrap">
         <span class="text-xs px-2 py-1 rounded <%= badge %>"><%= dep.status %></span>
         <span class="text-xs text-gray-400"><%= durationStr %></span>
+        <% if (dep.commit_sha) { %><span class="text-xs font-mono text-gray-400"><%= dep.commit_sha.slice(0, 7) %></span><% } %>
+        <% if (dep.commit_message) { %><span class="text-xs text-gray-500 truncate max-w-xs"><%= dep.commit_message %></span><% } %>
         <span class="text-sm text-gray-500"><%= dep.created_at %></span>
     </div>
-    <a href="/deployments/<%= dep.id %>" class="text-sm text-blue-600 hover:underline">View Log</a>
+    <div class="flex items-center gap-2">
+        <a href="/deployments/<%= dep.id %>" class="text-sm text-blue-600 hover:underline">View Log</a>
+        <% if (dep.status === 'success' && dep.commit_sha) { %>
+        <form method="POST" action="/apps/<%= app.id %>/rollback" onsubmit="return confirm('Rollback to <%= dep.commit_sha.slice(0,7) %>?')">
+            <input type="hidden" name="deployment_id" value="<%= dep.id %>">
+            <button type="submit" class="text-xs px-2 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200">
+                Rollback
+            </button>
+        </form>
+        <% } %>
+    </div>
 </div>
 <% }) %>
 <% } %>

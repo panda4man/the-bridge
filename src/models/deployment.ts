@@ -10,13 +10,16 @@ export function create(data: Partial<DeploymentRecord>): DeploymentRecord {
   const db = getDb();
   const now = new Date().toISOString();
   const result = db.prepare(
-    'INSERT INTO deployments (app_id, status, log, started_at, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO deployments (app_id, status, log, started_at, finished_at, commit_sha, commit_message, rollback_sha, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     data.app_id,
     data.status ?? DeploymentStatus.Pending,
     data.log ?? null,
     data.started_at ?? null,
     data.finished_at ?? null,
+    data.commit_sha ?? null,
+    data.commit_message ?? null,
+    data.rollback_sha ?? null,
     now,
     now
   );
