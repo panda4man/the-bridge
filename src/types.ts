@@ -5,6 +5,9 @@ export interface AppRecord {
   repo_url: string;
   branch: string;
   status: string;
+  health_url: string | null;
+  health_check_interval: number;
+  webhook_secret: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +19,9 @@ export interface DeploymentRecord {
   log: string | null;
   started_at: string | null;
   finished_at: string | null;
+  commit_sha: string | null;
+  commit_message: string | null;
+  rollback_sha: string | null;
   created_at: string;
   updated_at: string;
   app_name?: string;
@@ -49,6 +55,20 @@ export interface JobRecord {
   reserved_at: number | null;
   available_at: number;
   created_at: number;
+}
+
+export interface HealthCheckRecord {
+  id: number;
+  app_id: number;
+  status: string;
+  http_status_code: number | null;
+  response_time_ms: number | null;
+  checked_at: string;
+}
+
+export interface SettingRecord {
+  key: string;
+  value: string;
 }
 
 declare global {

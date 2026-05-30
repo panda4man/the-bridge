@@ -15,3 +15,11 @@ export const DeploymentStatus = Object.freeze({
 } as const);
 
 export type DeploymentStatusValue = typeof DeploymentStatus[keyof typeof DeploymentStatus];
+
+export const HealthStatus = Object.freeze({
+  Up: 'up',
+  Down: 'down',
+  Unknown: 'unknown',
+} as const);
+
+export type HealthStatusValue = typeof HealthStatus[keyof typeof HealthStatus];

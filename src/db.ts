@@ -51,7 +51,35 @@ function bootstrapSchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs(queue);
+
+    CREATE TABLE IF NOT EXISTS health_checks (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      app_id           INTEGER NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+      status           TEXT NOT NULL DEFAULT 'unknown',
+      http_status_code INTEGER,
+      response_time_ms INTEGER,
+      checked_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS health_checks_app_id_idx ON health_checks(app_id);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
+
+  const migrations: string[] = [
+    'ALTER TABLE apps ADD COLUMN health_url TEXT',
+    'ALTER TABLE apps ADD COLUMN health_check_interval INTEGER NOT NULL DEFAULT 60',
+    'ALTER TABLE apps ADD COLUMN webhook_secret TEXT',
+    'ALTER TABLE deployments ADD COLUMN commit_sha TEXT',
+    'ALTER TABLE deployments ADD COLUMN commit_message TEXT',
+    'ALTER TABLE deployments ADD COLUMN rollback_sha TEXT',
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch { /* column already exists */ }
+  }
 }
 
 export function resetStuckDeployments(db: Database.Database): number {
