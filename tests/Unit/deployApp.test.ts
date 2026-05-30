@@ -60,3 +60,35 @@ test('deployApp marks deployment failed when compose exits non-zero', async () =
 
   rmSync(dir, { recursive: true, force: true });
 }, 120000);
+
+test('deployApp stores commit_sha after successful deploy', async () => {
+  const dir = makeTestDir('bridge-sha');
+  const app = AppModel.create({ name: 'SHA', repo_url: TEST_REPO, branch: TEST_BRANCH, path: dir });
+  const dep = DeploymentModel.create({ app_id: app.id, status: DeploymentStatus.Pending });
+
+  const mockRunner = async (_s: string, _w: string, _o: (c: string) => void) => 0;
+  await deployApp(dep.id, { composeRunner: mockRunner });
+
+  const updated = DeploymentModel.findById(dep.id);
+  expect(updated!.commit_sha).toMatch(/^[0-9a-f]{40}$/);
+  expect(updated!.commit_message).toBeTruthy();
+
+  rmSync(dir, { recursive: true, force: true });
+}, 120000);
+
+test('deployApp with rollback_sha checks out that SHA instead of pulling', async () => {
+  const dir = makeTestDir('bridge-rollback');
+  const sha = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
+
+  const app = AppModel.create({ name: 'RB', repo_url: TEST_REPO, branch: TEST_BRANCH, path: dir });
+  const dep = DeploymentModel.create({ app_id: app.id, status: DeploymentStatus.Pending, rollback_sha: sha });
+
+  const mockRunner = async (_s: string, _w: string, _o: (c: string) => void) => 0;
+  await deployApp(dep.id, { composeRunner: mockRunner });
+
+  const updated = DeploymentModel.findById(dep.id);
+  expect(updated!.status).toBe(DeploymentStatus.Success);
+  expect(updated!.commit_sha).toBe(sha);
+
+  rmSync(dir, { recursive: true, force: true });
+}, 120000);

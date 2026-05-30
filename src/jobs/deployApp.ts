@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import * as AppModel from '../models/app.js';
@@ -67,9 +67,23 @@ export async function deployApp(deploymentId: number, options: DeployAppOptions 
 
   try {
     const git = new GitService(sshKeyPath);
-    DeploymentModel.appendLog(deploymentId, '=== git pull ===\n');
-    const pullOutput = await git.pull(app.path, app.branch);
-    DeploymentModel.appendLog(deploymentId, pullOutput + '\n');
+
+    if (dep.rollback_sha) {
+      DeploymentModel.appendLog(deploymentId, `=== git checkout ${dep.rollback_sha} ===\n`);
+      const fetchOut = await git.pull(app.path, app.branch);
+      DeploymentModel.appendLog(deploymentId, fetchOut + '\n');
+      execSync(`git checkout ${dep.rollback_sha}`, { cwd: app.path });
+      DeploymentModel.appendLog(deploymentId, `Checked out ${dep.rollback_sha}\n`);
+    } else {
+      DeploymentModel.appendLog(deploymentId, '=== git pull ===\n');
+      const pullOutput = await git.pull(app.path, app.branch);
+      DeploymentModel.appendLog(deploymentId, pullOutput + '\n');
+    }
+
+    // capture commit SHA and message
+    const commitSha = execSync('git rev-parse HEAD', { cwd: app.path }).toString().trim();
+    const commitMsg = execSync('git log -1 --format=%s', { cwd: app.path }).toString().trim();
+    DeploymentModel.update(deploymentId, { commit_sha: commitSha, commit_message: commitMsg });
 
     for (const subCmd of ['pull', 'up -d --build --remove-orphans']) {
       let success = false;
