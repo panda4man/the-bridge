@@ -25,6 +25,7 @@ RUN chmod +x /entrypoint.sh
 
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY public/ ./public/
 
 EXPOSE 3000
 

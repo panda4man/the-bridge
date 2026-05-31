@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import appsRouter from './routes/apps.js';
 import deploymentsRouter from './routes/deployments.js';
 import settingsRouter from './routes/settings.js';
+import apiRouter from './routes/api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use(express.static(join(__dirname, '..', 'public')));
 
+app.use('/api', apiRouter);
 app.use('/', appsRouter);
 app.use('/', deploymentsRouter);
 app.use('/', settingsRouter);

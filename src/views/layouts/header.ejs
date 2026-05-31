@@ -19,5 +19,10 @@
 </nav>
 <main class="max-w-4xl mx-auto p-6">
     <% if (locals.success && success.length) { %>
-        <div class="lcars-flash--success"><%= success[0] %></div>
+        <div x-data="{ show: true }" x-init="setTimeout(() => show = false, 5000)" x-show="show"
+             class="lcars-flash--success relative flex items-center justify-between">
+            <span><%= success[0] %></span>
+            <button @click="show = false" type="button"
+                    class="ml-4 text-lg leading-none opacity-60 hover:opacity-100 focus:outline-none">&times;</button>
+        </div>
     <% } %>
