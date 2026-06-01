@@ -29,7 +29,7 @@ function defaultComposeRunner(sshKeyPath: string): ComposeRunner {
     const stallTimeout = subCmd.startsWith('pull') ? 60000 : 300000;
 
     return new Promise((resolve) => {
-      const proc = spawn('docker-compose', args, { cwd: workDir, env });
+      const proc = spawn('docker', ['compose', ...args], { cwd: workDir, env });
       let timer = setTimeout(() => {
         onOutput(`\nERROR: process stalled — no output for ${stallTimeout / 1000}s, killed.\n`);
         proc.kill('SIGKILL');

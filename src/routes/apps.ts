@@ -21,7 +21,7 @@ const router = Router();
 function runComposeDown(workDir: string, composeFile: string): Promise<void> {
   return new Promise((resolve) => {
     const overlayFile = writeBridgeOverlay(workDir);
-    const proc = spawn('docker-compose', ['-f', composeFile, '-f', overlayFile, 'down'], { cwd: workDir });
+    const proc = spawn('docker', ['compose', '-f', composeFile, '-f', overlayFile, 'down'], { cwd: workDir });
     const timer = setTimeout(() => { proc.kill('SIGKILL'); resolve(); }, 60000);
     proc.on('close', () => { clearTimeout(timer); resolve(); });
     proc.on('error', () => { clearTimeout(timer); resolve(); });
