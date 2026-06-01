@@ -1,5 +1,5 @@
 import { existsSync } from 'fs';
-import simpleGit from 'simple-git';
+import simpleGit, { SimpleGit } from 'simple-git';
 
 export default class GitService {
   private _sshKeyPath: string;
@@ -8,16 +8,25 @@ export default class GitService {
     this._sshKeyPath = sshKeyPath ?? process.env.BRIDGE_SSH_KEY_PATH ?? '/data/ssh/id_rsa';
   }
 
-  private _sshEnv(): Record<string, string> {
+  // simple-git ignores `env` passed to the factory, so the SSH command must be
+  // applied via .env() — which is guarded behind allowUnsafeSshCommand. The
+  // single-arg .env() form merges with process.env, preserving PATH etc.
+  private _git(baseDir?: string): SimpleGit {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const opts: any = { unsafe: { allowUnsafeSshCommand: true } };
+    if (baseDir) opts.baseDir = baseDir;
+    const git = simpleGit(opts);
     if (this._sshKeyPath && existsSync(this._sshKeyPath)) {
-      return { GIT_SSH_COMMAND: `ssh -i ${this._sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null` };
+      git.env(
+        'GIT_SSH_COMMAND',
+        `ssh -i ${this._sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`
+      );
     }
-    return {};
+    return git;
   }
 
   async clone(repoUrl: string, targetPath: string, branch: string): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const git = simpleGit({ env: { ...process.env, ...this._sshEnv() } } as any);
+    const git = this._git();
     try {
       await git.clone(repoUrl, targetPath, ['--branch', branch, '-c', 'safe.directory=*']);
       return `Cloned ${repoUrl} into ${targetPath}`;
@@ -27,8 +36,7 @@ export default class GitService {
   }
 
   async lsRemote(repoUrl: string): Promise<string[]> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const git = simpleGit({ env: { ...process.env, ...this._sshEnv() } } as any);
+    const git = this._git();
     const output = await git.listRemote(['--heads', repoUrl]);
     return output
       .split('\n')
@@ -40,8 +48,7 @@ export default class GitService {
   }
 
   async pull(repoPath: string, branch: string): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const git = simpleGit({ baseDir: repoPath, env: { ...process.env, ...this._sshEnv() } } as any);
+    const git = this._git(repoPath);
     await git.raw(['config', 'safe.directory', '*']).catch(() => {});
     try {
       const output = await git.raw(['pull', 'origin', branch]);
