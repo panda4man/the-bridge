@@ -10,7 +10,7 @@ export default class GitService {
 
   private _sshEnv(): Record<string, string> {
     if (this._sshKeyPath && existsSync(this._sshKeyPath)) {
-      return { GIT_SSH_COMMAND: `ssh -i ${this._sshKeyPath} -o StrictHostKeyChecking=no` };
+      return { GIT_SSH_COMMAND: `ssh -i ${this._sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null` };
     }
     return {};
   }

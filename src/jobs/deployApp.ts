@@ -23,7 +23,7 @@ function defaultComposeRunner(sshKeyPath: string): ComposeRunner {
     const env: NodeJS.ProcessEnv = { ...process.env, DOCKER_PROGRESS: 'plain' };
 
     if (sshKeyPath && existsSync(sshKeyPath)) {
-      env.GIT_SSH_COMMAND = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no`;
+      env.GIT_SSH_COMMAND = `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`;
     }
 
     const stallTimeout = subCmd.startsWith('pull') ? 60000 : 300000;
