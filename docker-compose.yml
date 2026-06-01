@@ -16,4 +16,4 @@ services:
       - DB_PATH=/data/bridge.db
       - REPOS_PATH=${REPOS_PATH}
       - SESSION_SECRET=${SESSION_SECRET:-bridge-secret-change-me}
-      - BRIDGE_SSH_KEY_PATH=/data/ssh/id_rsa
+      - BRIDGE_SSH_KEY_PATH=${BRIDGE_SSH_KEY_PATH:-/data/ssh/id_rsa}
