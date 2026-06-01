@@ -26,6 +26,19 @@ export default class GitService {
     }
   }
 
+  async lsRemote(repoUrl: string): Promise<string[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const git = simpleGit({ env: { ...process.env, ...this._sshEnv() } } as any);
+    const output = await git.listRemote(['--heads', repoUrl]);
+    return output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split('\t')[1] || '')
+      .filter((ref) => ref.startsWith('refs/heads/'))
+      .map((ref) => ref.slice('refs/heads/'.length));
+  }
+
   async pull(repoPath: string, branch: string): Promise<string> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const git = simpleGit({ baseDir: repoPath, env: { ...process.env, ...this._sshEnv() } } as any);
