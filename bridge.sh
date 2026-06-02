@@ -6,11 +6,11 @@ DOCKGE_CONTAINER="dockge"
 
 case "${1:-}" in
     deploy)
-        git -C "$BRIDGE_DIR" pull
+        git -c safe.directory="$BRIDGE_DIR" -C "$BRIDGE_DIR" pull
         docker exec -w "$BRIDGE_DIR" "$DOCKGE_CONTAINER" docker compose up -d --build
         ;;
     pull)
-        git -C "$BRIDGE_DIR" pull
+        git -c safe.directory="$BRIDGE_DIR" -C "$BRIDGE_DIR" pull
         ;;
     build)
         docker exec -w "$BRIDGE_DIR" "$DOCKGE_CONTAINER" docker compose up -d --build
