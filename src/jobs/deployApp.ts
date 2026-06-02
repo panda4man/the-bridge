@@ -86,7 +86,7 @@ export async function deployApp(deploymentId: number, options: DeployAppOptions 
     const commitMsg = execSync('git log -1 --format=%s', { cwd: app.path }).toString().trim();
     DeploymentModel.update(deploymentId, { commit_sha: commitSha, commit_message: commitMsg });
 
-    for (const subCmd of ['pull', 'up -d --build --remove-orphans']) {
+    for (const subCmd of ['pull', 'down', 'up -d --build --remove-orphans']) {
       let success = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
         const label = attempt > 1 ? ` (attempt ${attempt})` : '';
