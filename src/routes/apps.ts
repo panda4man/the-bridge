@@ -5,7 +5,6 @@ import { join } from 'path';
 import { spawn } from 'child_process';
 import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import GitService from '../services/gitService.js';
-import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import { readPortBindings } from '../services/portBindings.js';
 import { getContainerStatus } from '../services/containerStatus.js';
 import * as AppModel from '../models/app.js';
@@ -20,8 +19,7 @@ const router = Router();
 
 function runComposeDown(workDir: string, composeFile: string): Promise<void> {
   return new Promise((resolve) => {
-    const overlayFile = writeBridgeOverlay(workDir);
-    const proc = spawn('docker', ['compose', '-f', composeFile, '-f', overlayFile, 'down'], { cwd: workDir });
+    const proc = spawn('docker', ['compose', '-f', composeFile, 'down'], { cwd: workDir });
     const timer = setTimeout(() => { proc.kill('SIGKILL'); resolve(); }, 60000);
     proc.on('close', () => { clearTimeout(timer); resolve(); });
     proc.on('error', () => { clearTimeout(timer); resolve(); });

@@ -4,7 +4,6 @@ import { join } from 'path';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
 import GitService from '../services/gitService.js';
-import { writeBridgeOverlay } from '../services/composeOverlay.js';
 import { AppStatus, DeploymentStatus } from '../enums.js';
 import { notifyDeployment } from '../services/slackNotifier.js';
 
@@ -18,8 +17,7 @@ export interface DeployAppOptions {
 function defaultComposeRunner(sshKeyPath: string): ComposeRunner {
   return async function (subCmd, workDir, onOutput) {
     const composeFile = join(workDir, 'docker-compose.yml');
-    const overlayFile = writeBridgeOverlay(workDir);
-    const args = ['-f', composeFile, '-f', overlayFile, ...subCmd.split(' ')];
+    const args = ['-f', composeFile, ...subCmd.split(' ')];
     const env: NodeJS.ProcessEnv = { ...process.env, DOCKER_PROGRESS: 'plain' };
 
     if (sshKeyPath && existsSync(sshKeyPath)) {
