@@ -92,65 +92,78 @@
     </dl>
 </div>
 
-<h2 class="lcars-section-header mt-6">Containers</h2>
-<div x-data="{ containers: [], loaded: false, async load() { const r = await fetch('/apps/<%= app.id %>/containers'); const d = await r.json(); this.containers = d.containers || []; this.loaded = true; } }" x-init="load()">
-  <div x-show="!loaded" class="text-sm lcars-muted">Loading…</div>
-  <div x-show="loaded && containers.length === 0" class="text-sm lcars-muted">No containers found.</div>
-  <template x-for="c in containers" :key="c.name">
-    <div class="lcars-card p-3 mb-2 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <span class="font-mono text-sm" x-text="c.service" style="color:var(--color-text)"></span>
-        <span class="lcars-badge"
-          :class="{
-            'lcars-badge--container-running':    c.state === 'running',
-            'lcars-badge--container-exited':     c.state === 'exited',
-            'lcars-badge--container-restarting': c.state === 'restarting',
-            'lcars-badge--container-unknown':    !['running','exited','restarting'].includes(c.state)
-          }"
-          x-text="c.state"></span>
-        <span class="text-xs lcars-muted font-mono" x-text="c.status"></span>
-      </div>
-      <span class="text-xs lcars-muted font-mono" x-text="c.ports"></span>
-    </div>
-  </template>
-</div>
+<div x-data="{ activeTab: 'containers' }" class="mt-6">
 
-<h2 class="lcars-section-header mt-6">Deploy History</h2>
-<% if (deployments.length === 0) { %>
-<p class="text-sm lcars-muted">No deployments yet.</p>
-<% } else { %>
-<% deployments.forEach(function(dep) {
-    const depClass = dep.status === 'success' ? 'lcars-badge--success'
-                   : dep.status === 'failed'  ? 'lcars-badge--failed'
-                   : dep.status === 'running' ? 'lcars-badge--running'
-                   : 'lcars-badge--pending';
-    let durationStr = '—';
-    if (dep.started_at && dep.finished_at) {
-        const secs = Math.round((new Date(dep.finished_at) - new Date(dep.started_at)) / 1000);
-        const m = Math.floor(secs / 60); const s = secs % 60;
-        durationStr = m > 0 ? `${m}m ${String(s).padStart(2,'0')}s` : `${s}s`;
-    }
-%>
-<div class="lcars-card lcars-card--command p-3 mb-2 flex items-center justify-between">
-    <div class="flex items-center gap-3 flex-wrap">
-        <span class="lcars-badge <%= depClass %>"><%= dep.status %></span>
-        <span class="text-xs lcars-muted"><%= durationStr %></span>
-        <% if (dep.commit_sha) { %><span class="text-xs font-mono lcars-muted"><%= dep.commit_sha.slice(0,7) %></span><% } %>
-        <% if (dep.commit_message) { %><span class="text-xs lcars-muted truncate max-w-xs"><%= dep.commit_message %></span><% } %>
-        <span class="text-xs lcars-muted"><%= dep.created_at %></span>
+  <div class="lcars-tab-bar">
+    <button class="lcars-tab" :class="{ 'lcars-tab--active': activeTab === 'containers' }"
+            @click="activeTab = 'containers'">Containers</button>
+    <button class="lcars-tab" :class="{ 'lcars-tab--active': activeTab === 'history' }"
+            @click="activeTab = 'history'">Deploy History</button>
+  </div>
+
+  <div x-show="activeTab === 'containers'" x-cloak>
+    <div x-data="{ containers: [], loaded: false, async load() { const r = await fetch('/apps/<%= app.id %>/containers'); const d = await r.json(); this.containers = d.containers || []; this.loaded = true; } }" x-init="load()">
+      <div x-show="!loaded" class="text-sm lcars-muted">Loading…</div>
+      <div x-show="loaded && containers.length === 0" class="text-sm lcars-muted">No containers found.</div>
+      <template x-for="c in containers" :key="c.name">
+        <div class="lcars-card p-3 mb-2 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="font-mono text-sm" x-text="c.service" style="color:var(--color-text)"></span>
+            <span class="lcars-badge"
+              :class="{
+                'lcars-badge--container-running':    c.state === 'running',
+                'lcars-badge--container-exited':     c.state === 'exited',
+                'lcars-badge--container-restarting': c.state === 'restarting',
+                'lcars-badge--container-unknown':    !['running','exited','restarting'].includes(c.state)
+              }"
+              x-text="c.state"></span>
+            <span class="text-xs lcars-muted font-mono" x-text="c.status"></span>
+          </div>
+          <span class="text-xs lcars-muted font-mono" x-text="c.ports"></span>
+        </div>
+      </template>
     </div>
-    <div class="flex items-center gap-2 shrink-0">
-        <a href="/deployments/<%= dep.id %>" class="lcars-btn lcars-btn--secondary lcars-btn--sm">Log</a>
-        <% if (dep.status === 'success' && dep.commit_sha) { %>
-        <form method="POST" action="/apps/<%= app.id %>/rollback" onsubmit="return confirm('Rollback to <%= dep.commit_sha.slice(0,7) %>?')">
-            <input type="hidden" name="deployment_id" value="<%= dep.id %>">
-            <button type="submit" class="lcars-btn lcars-btn--warning lcars-btn--sm">Rollback</button>
-        </form>
-        <% } %>
+  </div>
+
+  <div x-show="activeTab === 'history'" x-cloak>
+    <% if (deployments.length === 0) { %>
+    <p class="text-sm lcars-muted">No deployments yet.</p>
+    <% } else { %>
+    <% deployments.forEach(function(dep) {
+        const depClass = dep.status === 'success' ? 'lcars-badge--success'
+                       : dep.status === 'failed'  ? 'lcars-badge--failed'
+                       : dep.status === 'running' ? 'lcars-badge--running'
+                       : 'lcars-badge--pending';
+        let durationStr = '—';
+        if (dep.started_at && dep.finished_at) {
+            const secs = Math.round((new Date(dep.finished_at) - new Date(dep.started_at)) / 1000);
+            const m = Math.floor(secs / 60); const s = secs % 60;
+            durationStr = m > 0 ? `${m}m ${String(s).padStart(2,'0')}s` : `${s}s`;
+        }
+    %>
+    <div class="lcars-card lcars-card--command p-3 mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-3 flex-wrap">
+            <span class="lcars-badge <%= depClass %>"><%= dep.status %></span>
+            <span class="text-xs lcars-muted"><%= durationStr %></span>
+            <% if (dep.commit_sha) { %><span class="text-xs font-mono lcars-muted"><%= dep.commit_sha.slice(0,7) %></span><% } %>
+            <% if (dep.commit_message) { %><span class="text-xs lcars-muted truncate max-w-xs"><%= dep.commit_message %></span><% } %>
+            <span class="text-xs lcars-muted"><%= dep.created_at %></span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            <a href="/deployments/<%= dep.id %>" class="lcars-btn lcars-btn--secondary lcars-btn--sm">Log</a>
+            <% if (dep.status === 'success' && dep.commit_sha) { %>
+            <form method="POST" action="/apps/<%= app.id %>/rollback" onsubmit="return confirm('Rollback to <%= dep.commit_sha.slice(0,7) %>?')">
+                <input type="hidden" name="deployment_id" value="<%= dep.id %>">
+                <button type="submit" class="lcars-btn lcars-btn--warning lcars-btn--sm">Rollback</button>
+            </form>
+            <% } %>
+        </div>
     </div>
+    <% }) %>
+    <% } %>
+  </div>
+
 </div>
-<% }) %>
-<% } %>
 
 <!-- .env editor modal -->
 <div x-show="envOpen" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none">
