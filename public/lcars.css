@@ -263,3 +263,35 @@ body {
 
 /* --- Muted text --- */
 .lcars-muted { color: var(--color-text-muted); }
+
+/* --- Tabs --- */
+.lcars-tab-bar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid var(--color-brand);
+  margin-bottom: 1rem;
+}
+
+.lcars-tab {
+  padding: 0.4rem 1.1rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.lcars-tab:hover { color: var(--color-text); }
+
+.lcars-tab--active {
+  color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+}
+
+[x-cloak] { display: none !important; }
