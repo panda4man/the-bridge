@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import GitService from '../services/gitService.js';
 import { readPortBindings } from '../services/portBindings.js';
+import { resolveDeploySteps, parseUiSteps, serializeUiSteps } from '../services/deploySteps.js';
 import { getContainerStatus } from '../services/containerStatus.js';
 import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
@@ -85,7 +86,18 @@ router.get('/apps/:id', (req: Request, res: Response) => {
 router.get('/apps/:id/edit', (req: Request, res: Response) => {
   const app = AppModel.findById(Number(req.params.id));
   if (!app) { res.status(404).send('Not found'); return; }
-  res.render('apps/edit', { app, errors: {}, sourceExists: existsSync(app.path) });
+  const sourceExists = existsSync(app.path);
+  let repoStepsActive = false;
+  let resolvedSteps: import('../types.js').DeployStep[] = [];
+  try {
+    const resolved = resolveDeploySteps(app);
+    repoStepsActive = resolved.source === 'repo';
+    resolvedSteps = resolved.steps;
+  } catch { /* ignore resolution errors on edit page */ }
+  const uiStepsText = repoStepsActive
+    ? serializeUiSteps(resolvedSteps)
+    : (app.deploy_steps ? serializeUiSteps(JSON.parse(app.deploy_steps)) : '');
+  res.render('apps/edit', { app, errors: {}, sourceExists, repoStepsActive, resolvedSteps, uiStepsText });
 });
 
 router.put('/apps/:id',
@@ -98,10 +110,12 @@ router.put('/apps/:id',
   updateRules,
   validateUpdate,
   (req: Request, res: Response) => {
-    const { name, repo_url, branch, path, health_url } = req.body as {
-      name: string; repo_url: string; branch: string; path: string; health_url?: string;
+    const { name, repo_url, branch, path, health_url, deploy_steps_text } = req.body as {
+      name: string; repo_url: string; branch: string; path: string; health_url?: string; deploy_steps_text?: string;
     };
-    AppModel.update(String(req.params.id), { name, repo_url, branch, path, health_url: health_url || null });
+    const parsedSteps = parseUiSteps(deploy_steps_text ?? '');
+    const deployStepsJson = parsedSteps.length > 0 ? JSON.stringify(parsedSteps) : null;
+    AppModel.update(String(req.params.id), { name, repo_url, branch, path, health_url: health_url || null, deploy_steps: deployStepsJson });
     req.flash('success', 'App updated.');
     res.redirect(`/apps/${req.params.id}`);
   }

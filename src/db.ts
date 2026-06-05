@@ -76,6 +76,7 @@ function bootstrapSchema(db: Database.Database): void {
     'ALTER TABLE deployments ADD COLUMN commit_sha TEXT',
     'ALTER TABLE deployments ADD COLUMN commit_message TEXT',
     'ALTER TABLE deployments ADD COLUMN rollback_sha TEXT',
+    'ALTER TABLE apps ADD COLUMN deploy_steps TEXT',
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch { /* column already exists */ }

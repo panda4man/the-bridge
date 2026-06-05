@@ -20,10 +20,14 @@ export function list(): AppRecord[] {
 }
 
 export function update(id: number | string, data: Partial<AppRecord>): AppRecord | null {
+  const db = getDb();
   const now = new Date().toISOString();
-  getDb().prepare(
-    'UPDATE apps SET name = ?, repo_url = ?, branch = ?, path = ?, health_url = ?, updated_at = ? WHERE id = ?'
-  ).run(data.name, data.repo_url, data.branch, data.path, data.health_url ?? null, now, id);
+  const fields = Object.keys(data).filter(k => k !== 'id') as (keyof AppRecord)[];
+  if (fields.length === 0) return findById(Number(id));
+  const sets = fields.map(k => `${k} = ?`).join(', ');
+  const values = fields.map(k => data[k] ?? null);
+  db.prepare(`UPDATE apps SET ${sets}, updated_at = ? WHERE id = ?`)
+    .run(...values, now, id);
   return findById(Number(id));
 }
 

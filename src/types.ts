@@ -1,3 +1,8 @@
+export interface DeployStep {
+  service: string;
+  run: string;
+}
+
 export interface AppRecord {
   id: number;
   name: string;
@@ -8,6 +13,7 @@ export interface AppRecord {
   health_url: string | null;
   health_check_interval: number;
   webhook_secret: string | null;
+  deploy_steps: string | null;
   created_at: string;
   updated_at: string;
 }

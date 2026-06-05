@@ -24,6 +24,22 @@
             placeholder="https://myapp.example.com/health" class="lcars-input">
         <p class="text-xs lcars-muted mt-1">Pinged every 60s. Must return 2xx to be considered healthy.</p>
     </div>
+    <div>
+        <label class="lcars-label">Post-Deploy Steps <span class="lcars-muted font-normal normal-case">(optional)</span></label>
+        <% if (repoStepsActive) { %>
+        <div class="lcars-card lcars-card--sciences p-3 text-sm font-mono">
+            <p class="lcars-muted text-xs mb-2">Defined in repo <code>bridge.yml</code> &mdash; overrides UI.</p>
+            <% for (const step of resolvedSteps) { %>
+            <div><%= step.service %>: <%= step.run %></div>
+            <% } %>
+        </div>
+        <input type="hidden" name="deploy_steps_text" value="">
+        <% } else { %>
+        <textarea name="deploy_steps_text" rows="4" class="lcars-input font-mono text-sm"
+            placeholder="service: command&#10;app: php artisan migrate --force&#10;app: php artisan config:cache"><%= uiStepsText %></textarea>
+        <p class="text-xs lcars-muted mt-1">One step per line: <code>service: command</code>. Run after <code>up -d</code> succeeds. A failing step triggers auto-rollback.</p>
+        <% } %>
+    </div>
     <div class="flex gap-3">
         <button type="submit" class="lcars-btn lcars-btn--primary">Save</button>
         <a href="/apps/<%= app.id %>" class="lcars-btn lcars-btn--secondary">Cancel</a>
