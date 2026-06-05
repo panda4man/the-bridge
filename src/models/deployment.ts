@@ -53,6 +53,12 @@ export function update(id: number | string, data: Partial<DeploymentRecord>): De
   return findById(Number(id));
 }
 
+export function findLastSuccessful(appId: number | string, beforeId: number): DeploymentRecord | null {
+  return (getDb().prepare(
+    "SELECT * FROM deployments WHERE app_id = ? AND status = 'success' AND id < ? AND commit_sha IS NOT NULL ORDER BY id DESC LIMIT 1"
+  ).get(appId, beforeId) as DeploymentRecord | undefined) ?? null;
+}
+
 export function appendLog(id: number | string, chunk: string): void {
   getDb().prepare(
     "UPDATE deployments SET log = COALESCE(log, '') || ?, updated_at = ? WHERE id = ?"

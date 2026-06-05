@@ -3,6 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { getDb } from '../db.js';
+import { resolveDeploySteps, serializeUiSteps } from '../services/deploySteps.js';
 
 function reposPath(): string {
   return (process.env.REPOS_PATH || '/repos').replace(/\/$/, '');
@@ -93,9 +94,25 @@ export const updateRules: RequestHandler[] = [
 export function validateUpdate(req: Request, res: Response, next: NextFunction): void {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const app = req.app_record!;
+    const sourceExists = existsSync(app.path);
+    let repoStepsActive = false;
+    let resolvedSteps: import('../types.js').DeployStep[] = [];
+    try {
+      const resolved = resolveDeploySteps(app);
+      repoStepsActive = resolved.source === 'repo';
+      resolvedSteps = resolved.steps;
+    } catch { /* ignore */ }
+    const uiStepsText = repoStepsActive
+      ? serializeUiSteps(resolvedSteps)
+      : (app.deploy_steps ? serializeUiSteps(JSON.parse(app.deploy_steps)) : '');
     res.status(422).render('apps/edit', {
       errors: errors.mapped(),
-      app: req.app_record,
+      app,
+      sourceExists,
+      repoStepsActive,
+      resolvedSteps,
+      uiStepsText,
     });
     return;
   }
