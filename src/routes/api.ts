@@ -5,6 +5,7 @@ import * as AppModel from '../models/app.js';
 import * as DeploymentModel from '../models/deployment.js';
 import { enqueueDeployJob } from '../queue.js';
 import { DeploymentStatus } from '../enums.js';
+import openApiSchema from '../openapi.js';
 
 const router = Router();
 
@@ -24,6 +25,35 @@ router.get('/branches', async (req: Request, res: Response) => {
   } catch {
     return res.json({ branches: [], error: 'Failed to fetch branches' });
   }
+});
+
+router.get('/openapi.json', (_req: Request, res: Response) => {
+  res.json(openApiSchema);
+});
+
+router.get('/docs', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>The Bridge API Docs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/api/openapi.json',
+      dom_id: '#swagger-ui',
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+      layout: 'BaseLayout',
+    });
+  </script>
+</body>
+</html>`);
 });
 
 router.get('/apps', requireApiToken, (req: Request, res: Response) => {
