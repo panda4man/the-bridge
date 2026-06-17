@@ -61,6 +61,13 @@ The container runs both the web server and queue worker via supervisord. The `/d
 docker cp ~/.ssh/id_rsa <container>:/data/ssh/id_rsa
 ```
 
+## For AI agents
+
+Use **Sonnet** (`claude-sonnet-4-6`) for implementation — editing files, writing code, running tests.
+Use **Opus** (`claude-opus-4-8`) for planning — architecture decisions, task decomposition, design review.
+
+See `AGENTS.md` for code navigation policy and jCodemunch tool usage.
+
 ## Tests
 
 ```bash
