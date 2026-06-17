@@ -23,56 +23,71 @@ workflow-aware companion to the OpenAPI schema at `/api/openapi.json`.
 
 No tools are registered — by design, the server never performs HTTP requests.
 
-## Install
+## Use it across ALL your projects (recommended)
+
+The goal: agents in any of your apps know how to deploy that app to The Bridge,
+without hand-editing each repo's MCP config.
+
+### 1. Install the server once, globally
+
+```bash
+uv tool install /abs/path/to/the-bridge/bridge-mcp
+# or, from inside this dir:  uv tool install .
+```
+
+This puts `bridge-mcp` and `bridge-mcp-init` on your PATH, independent of where
+the-bridge is checked out. Upgrade later with `uv tool upgrade bridge-mcp`.
+
+### 2. Register it for every project (user scope)
+
+```bash
+claude mcp add bridge-api-guide --scope user -- bridge-mcp
+```
+
+User scope = available in **every** project on this machine. Verify with
+`claude mcp list`. (No per-repo `.mcp.json` needed.)
+
+### 3. Tell each app's agents to use it
+
+In each app repo, drop the deploy-instruction block (idempotent, replaceable):
+
+```bash
+bridge-mcp-init --instructions-only --repo /path/to/that-app
+# or just run inside the repo:  bridge-mcp-init --instructions-only
+```
+
+This writes only the `AGENTS.md` block (skips `.mcp.json`, since registration is
+global). Commit it so the steer travels with the repo. Re-running replaces the
+block in place.
+
+Each agent still needs the per-app runtime inputs to actually deploy: The Bridge
+base URL, a bearer token, and the app's id — these are operator-supplied, not
+baked into the server.
+
+## Per-project alternative (share with teammates)
+
+To commit the server into a single repo instead of global registration:
+
+```bash
+bridge-mcp-init                 # both: .mcp.json entry + AGENTS.md block
+bridge-mcp-init --dry-run       # preview
+bridge-mcp-init --mcp-only      # only the .mcp.json entry
+bridge-mcp-init --force         # overwrite an existing entry
+```
+
+The emitted `.mcp.json` entry uses the bare on-PATH command, so teammates must
+also `uv tool install` the package:
+
+```json
+{ "mcpServers": { "bridge-api-guide": { "command": "bridge-mcp" } } }
+```
+
+## Local development
 
 ```bash
 cd bridge-mcp
-uv sync           # or: pip install -e .[dev]
-```
-
-## Run (stdio)
-
-```bash
-uv run bridge-mcp            # or: python -m bridge_mcp.server
-```
-
-Inspect interactively with the MCP Inspector:
-
-```bash
-uv run mcp dev bridge_mcp/server.py
-```
-
-## Wire it into a repo
-
-```bash
-uv run bridge-mcp-init                 # auto-detects repo root
-uv run bridge-mcp-init --dry-run       # preview changes
-uv run bridge-mcp-init --force         # overwrite an existing .mcp.json entry
-```
-
-This (1) adds a `bridge-api-guide` stdio entry to the repo's `.mcp.json`
-(backing up the old file to `.mcp.json.bak`, leaving other servers untouched),
-and (2) installs an agent-instruction block into `AGENTS.md` (idempotent — the
-fenced block is replaced in place on re-runs, never duplicated).
-
-Registered manually, the `.mcp.json` entry is:
-
-```json
-{
-  "mcpServers": {
-    "bridge-api-guide": {
-      "command": "uv",
-      "args": ["run", "--directory", "bridge-mcp", "bridge-mcp"]
-    }
-  }
-}
-```
-
-(For non-uv setups, use `"command": "python", "args": ["-m", "bridge_mcp.server"]`
-with the package installed.)
-
-## Test
-
-```bash
-uv run pytest
+uv sync                          # install deps incl. dev
+uv run bridge-mcp                # run server over stdio
+uv run mcp dev bridge_mcp/server.py   # MCP Inspector
+uv run pytest                    # 22 tests
 ```

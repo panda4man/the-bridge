@@ -1,6 +1,7 @@
 ## Deploying with The Bridge (bridge-api-guide MCP)
 
-This repo exposes a `bridge-api-guide` MCP server. It is **instruction-only**: it
+This project is deployed via **The Bridge**. A `bridge-api-guide` MCP server is
+available (registered globally or in this repo). It is **instruction-only**: it
 tells you how to call The Bridge deployment API; it does not call it for you.
 
 **Before any deploy or deployment-status task:**

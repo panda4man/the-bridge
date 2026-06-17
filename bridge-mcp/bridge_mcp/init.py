@@ -24,11 +24,13 @@ _TEMPLATE_PATH = Path(__file__).with_name("AGENT_INSTRUCTIONS.md")
 
 
 def mcp_entry() -> dict:
-    """The stdio server entry to add to .mcp.json."""
-    return {
-        "command": "uv",
-        "args": ["run", "--directory", "bridge-mcp", "bridge-mcp"],
-    }
+    """The stdio server entry to add to .mcp.json.
+
+    Uses the bare ``bridge-mcp`` command, which is on PATH after
+    ``uv tool install``. This is location-independent, so the same entry works
+    in any project (unlike a relative ``--directory``).
+    """
+    return {"command": "bridge-mcp"}
 
 
 def find_repo_root(start: Path) -> Path:
@@ -115,14 +117,23 @@ def main(argv: list[str] | None = None) -> int:
                         help="Overwrite an existing .mcp.json entry.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would change without writing.")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--instructions-only", action="store_true",
+                       help="Only install the AGENTS.md block; skip .mcp.json "
+                            "(use when the server is registered globally with "
+                            "--scope user).")
+    scope.add_argument("--mcp-only", action="store_true",
+                       help="Only register .mcp.json; skip the AGENTS.md block.")
     args = parser.parse_args(argv)
 
     repo_root = args.repo.resolve() if args.repo else find_repo_root(Path.cwd())
 
     print(f"Repo root: {repo_root}")
-    print(register_mcp_json(repo_root, force=args.force, dry_run=args.dry_run))
-    print(install_instructions(repo_root, target=args.target, dry_run=args.dry_run))
-    if not args.dry_run:
+    if not args.instructions_only:
+        print(register_mcp_json(repo_root, force=args.force, dry_run=args.dry_run))
+    if not args.mcp_only:
+        print(install_instructions(repo_root, target=args.target, dry_run=args.dry_run))
+    if not args.dry_run and not args.instructions_only:
         print("Next: reload your MCP config (restart Claude Code / your client) "
               "to pick up the server.")
     return 0

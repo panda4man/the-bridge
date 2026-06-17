@@ -3,11 +3,30 @@ import json
 from bridge_mcp import init
 
 
+def test_mcp_entry_is_location_independent():
+    # Bare command (on PATH via `uv tool install`) — no relative --directory.
+    assert init.mcp_entry() == {"command": "bridge-mcp"}
+
+
 def test_register_mcp_json_creates_file(tmp_path):
     msg = init.register_mcp_json(tmp_path)
     assert msg.startswith("ok: add")
     data = json.loads((tmp_path / ".mcp.json").read_text())
     assert data["mcpServers"][init.SERVER_NAME] == init.mcp_entry()
+
+
+def test_instructions_only_skips_mcp_json(tmp_path):
+    (tmp_path / ".git").mkdir()
+    init.main(["--repo", str(tmp_path), "--instructions-only"])
+    assert not (tmp_path / ".mcp.json").exists()
+    assert (tmp_path / "AGENTS.md").exists()
+
+
+def test_mcp_only_skips_instructions(tmp_path):
+    (tmp_path / ".git").mkdir()
+    init.main(["--repo", str(tmp_path), "--mcp-only"])
+    assert (tmp_path / ".mcp.json").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
 
 
 def test_register_mcp_json_preserves_other_servers_and_backs_up(tmp_path):
