@@ -31,12 +31,14 @@ without hand-editing each repo's MCP config.
 ### 1. Install the server once, globally
 
 ```bash
-uv tool install /abs/path/to/the-bridge/bridge-mcp
-# or, from inside this dir:  uv tool install .
+uv tool install --editable /abs/path/to/the-bridge/bridge-mcp
+# or, from inside this dir:  uv tool install --editable .
 ```
 
 This puts `bridge-mcp` and `bridge-mcp-init` on your PATH, independent of where
-the-bridge is checked out. Upgrade later with `uv tool upgrade bridge-mcp`.
+the-bridge is checked out. `--editable` makes source edits take effect without
+reinstalling. (Drop `--editable` for a pinned snapshot; then pick up changes
+with `uv tool upgrade bridge-mcp`.)
 
 ### 2. Register it for every project (user scope)
 
