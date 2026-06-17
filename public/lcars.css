@@ -61,6 +61,14 @@ body {
   text-transform: uppercase;
   color: var(--color-brand);
   text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+
+.lcars-nav__logo {
+  height: 2.5rem;
+  width: auto;
+  display: block;
 }
 
 .lcars-nav__link {
