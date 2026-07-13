@@ -50,9 +50,23 @@ export default class GitService {
   async pull(repoPath: string, branch: string): Promise<string> {
     const git = this._git(repoPath);
     await git.raw(['config', 'safe.directory', '*']).catch(() => {});
+    const log: string[] = [];
     try {
-      const output = await git.raw(['pull', 'origin', branch]);
-      return output.trim() || `Pulled ${branch} in ${repoPath}`;
+      const fetchOut = await git.raw(['fetch', 'origin', branch]);
+      if (fetchOut.trim()) log.push(fetchOut.trim());
+
+      const currentBranch = (await git.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+      if (currentBranch !== branch) {
+        const localBranches = await git.raw(['branch', '--list', branch]);
+        const checkoutOut = localBranches.trim()
+          ? await git.raw(['checkout', branch])
+          : await git.raw(['checkout', '-b', branch, '--track', `origin/${branch}`]);
+        if (checkoutOut.trim()) log.push(checkoutOut.trim());
+      }
+
+      const pullOut = await git.raw(['pull', 'origin', branch]);
+      log.push(pullOut.trim() || `Pulled ${branch} in ${repoPath}`);
+      return log.join('\n');
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : String(err));
     }

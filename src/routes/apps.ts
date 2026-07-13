@@ -113,9 +113,19 @@ router.put('/apps/:id',
     const { name, repo_url, branch, path, health_url, deploy_steps_text } = req.body as {
       name: string; repo_url: string; branch: string; path: string; health_url?: string; deploy_steps_text?: string;
     };
+    const previousBranch = req.app_record!.branch;
     const parsedSteps = parseUiSteps(deploy_steps_text ?? '');
     const deployStepsJson = parsedSteps.length > 0 ? JSON.stringify(parsedSteps) : null;
     AppModel.update(String(req.params.id), { name, repo_url, branch, path, health_url: health_url || null, deploy_steps: deployStepsJson });
+
+    if (branch !== previousBranch) {
+      const dep = DeploymentModel.create({ app_id: Number(req.params.id), status: DeploymentStatus.Pending });
+      enqueueDeployJob(dep.id);
+      req.flash('success', `App updated. Deploying branch "${branch}"...`);
+      res.redirect(`/deployments/${dep.id}`);
+      return;
+    }
+
     req.flash('success', 'App updated.');
     res.redirect(`/apps/${req.params.id}`);
   }
