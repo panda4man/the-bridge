@@ -29,3 +29,6 @@ Thumbs.db
 .nvmrc
 .mcp.json
 data/
+bridge.db
+bridge.db-shm
+bridge.db-wal
