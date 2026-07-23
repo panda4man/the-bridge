@@ -12,7 +12,8 @@ schema at `/api/openapi.json`.
 1. Prereq: [`uv`](https://docs.astral.sh/uv/) installed. That's it — no
    `pip install`, no cloning this repo.
 2. Register the server, once, user-scope (available in every project on this
-   machine):
+   machine). Pulling the values from an existing `.env` instead of typing the
+   token? See [step 1 below](#1-register-it-for-every-project-user-scope):
    ```bash
    claude mcp add bridge-api-guide --scope user \
      -e BRIDGE_API_BASE_URL=http://localhost:3000/api \
@@ -77,15 +78,26 @@ first launch. Nothing to put on PATH, nothing to upgrade by hand.
 
 ### 1. Register it for every project (user scope)
 
+`claude mcp add --scope user` has no live env-var expansion — `-e` only takes
+literal values, baked in at add-time. To pull from an existing `.env` instead
+of hand-typing the token, export it into the shell first and let the shell
+fill in the literal:
+
 ```bash
+set -a; source .env; set +a   # exports BRIDGE_API_BASE_URL / BRIDGE_API_TOKEN
 claude mcp add bridge-api-guide --scope user \
-  -e BRIDGE_API_BASE_URL=http://localhost:3000/api \
-  -e BRIDGE_API_TOKEN=<token> \
+  -e BRIDGE_API_BASE_URL="$BRIDGE_API_BASE_URL" \
+  -e BRIDGE_API_TOKEN="$BRIDGE_API_TOKEN" \
   -- uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp
 ```
 
-User scope = available in **every** project on this machine. Verify with
-`claude mcp list`. (No per-repo `.mcp.json` needed.)
+Re-run `claude mcp add ... --scope user` (it overwrites) whenever the token
+rotates. User scope = available in **every** project on this machine. Verify
+with `claude mcp list`. (No per-repo `.mcp.json` needed.)
+
+Want the value to actually live-resolve from the environment on every launch
+instead of being baked in once? That's only supported for project-scope
+`.mcp.json` — see [Per-project alternative](#per-project-alternative-share-with-teammates).
 
 ### 2. Tell each app's agents to use it
 
@@ -119,8 +131,13 @@ bridge-mcp-init --force         # overwrite an existing entry
 
 The emitted `.mcp.json` entry launches via `uvx --from git+...`, so any
 teammate with `uv` installed can use it as-is — no local checkout, no global
-install. Add the required env vars before committing (or override them
-locally with `.mcp.json.local` / your client's env support):
+install.
+
+Claude Code expands `${VAR}` / `${VAR:-default}` inside `.mcp.json` values,
+resolved from Claude Code's own environment each time it starts — so use
+placeholders instead of literal secrets. No token ever touches the committed
+file; each teammate just needs `BRIDGE_API_BASE_URL` / `BRIDGE_API_TOKEN`
+exported (e.g. `set -a; source .env; set +a`) before launching `claude`:
 
 ```json
 {
@@ -133,13 +150,16 @@ locally with `.mcp.json.local` / your client's env support):
         "bridge-mcp"
       ],
       "env": {
-        "BRIDGE_API_BASE_URL": "http://localhost:3000/api",
-        "BRIDGE_API_TOKEN": "<token>"
+        "BRIDGE_API_BASE_URL": "${BRIDGE_API_BASE_URL:-http://localhost:3000/api}",
+        "BRIDGE_API_TOKEN": "${BRIDGE_API_TOKEN}"
       }
     }
   }
 }
 ```
+
+This is the version to commit. (`.mcp.json.local` / literal values still work
+if you'd rather not rely on shell export.)
 
 By default this tracks the default branch. Pin a tag/commit for
 reproducibility by appending `@<ref>` before the `#subdirectory` fragment,
