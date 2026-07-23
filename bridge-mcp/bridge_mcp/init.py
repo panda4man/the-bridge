@@ -20,17 +20,22 @@ SERVER_NAME = "bridge-api-guide"
 BLOCK_BEGIN = "<!-- BEGIN bridge-api-guide -->"
 BLOCK_END = "<!-- END bridge-api-guide -->"
 
+GIT_SOURCE = "git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp"
+
 _TEMPLATE_PATH = Path(__file__).with_name("AGENT_INSTRUCTIONS.md")
 
 
 def mcp_entry() -> dict:
     """The stdio server entry to add to .mcp.json.
 
-    Uses the bare ``bridge-mcp`` command, which is on PATH after
-    ``uv tool install``. This is location-independent, so the same entry works
-    in any project (unlike a relative ``--directory``).
+    Launches via ``uvx --from <git source> bridge-mcp``. uv fetches and caches
+    the package on first run — no prior ``uv tool install``, no local
+    checkout, no PATH setup. Same entry works for any consumer on any
+    machine. Pin a ref for reproducibility with ``GIT_SOURCE + "@<tag-or-sha>"``
+    before the ``#subdirectory`` fragment if the default branch moving out
+    from under a committed config is a concern.
     """
-    return {"command": "bridge-mcp"}
+    return {"command": "uvx", "args": ["--from", GIT_SOURCE, "bridge-mcp"]}
 
 
 def find_repo_root(start: Path) -> Path:

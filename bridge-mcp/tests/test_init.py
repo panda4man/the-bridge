@@ -4,8 +4,11 @@ from bridge_mcp import init
 
 
 def test_mcp_entry_is_location_independent():
-    # Bare command (on PATH via `uv tool install`) — no relative --directory.
-    assert init.mcp_entry() == {"command": "bridge-mcp"}
+    # uvx pulls straight from git — no local checkout, no PATH setup.
+    assert init.mcp_entry() == {
+        "command": "uvx",
+        "args": ["--from", init.GIT_SOURCE, "bridge-mcp"],
+    }
 
 
 def test_register_mcp_json_creates_file(tmp_path):
