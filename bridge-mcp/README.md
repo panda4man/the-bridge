@@ -34,8 +34,10 @@ schema at `/api/openapi.json`.
 The tools read these environment variables at call time (set them in the
 MCP client config that launches this server):
 
-- `BRIDGE_API_BASE_URL` — required. The Bridge's API base, e.g.
-  `http://localhost:3000/api`.
+- `BRIDGE_API_BASE_URL` — required. **Must include the `/api` suffix** —
+  e.g. `http://localhost:3000/api`, not `http://localhost:3000`. The tools
+  request bare paths like `/apps` on top of this base; omit `/api` and every
+  call 404s against the server's page routes instead of its JSON API.
 - `BRIDGE_API_TOKEN` — required for every tool except `list_branches`. Must
   match the token The Bridge is configured with (`BRIDGE_API_TOKEN` env var or
   the `api_token` settings field on that server).
