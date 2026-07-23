@@ -69,7 +69,7 @@ Use **Opus** (`claude-opus-4-8`) for planning — architecture decisions, task d
 See `AGENTS.md` for code navigation policy and jCodemunch tool usage.
 
 Agents deploying apps through The Bridge's API should use the
-[`bridge-mcp`](bridge-mcp/README.md) MCP server — see its Quickstart for setup.
+[`bridge-mcp`](bridge-mcp/README.md) MCP server — see its Installing section for setup.
 
 ## Tests
 

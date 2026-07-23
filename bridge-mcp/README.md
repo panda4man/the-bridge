@@ -7,34 +7,6 @@ authored *resources* and *prompts* that explain the contract and recommended
 workflow. Think of it as a live, workflow-aware companion to the OpenAPI
 schema at `/api/openapi.json`.
 
-## Quickstart
-
-1. Prereq: [`uv`](https://docs.astral.sh/uv/) installed. That's it — no
-   `pip install`, no cloning this repo.
-2. Register the server, once, user-scope (available in every project on this
-   machine). Pulling the values from an existing `.env` instead of typing the
-   token? See [step 1 below](#1-register-it-for-every-project-user-scope):
-   ```bash
-   claude mcp add bridge-api-guide --scope user \
-     -e BRIDGE_API_BASE_URL=http://localhost:3000/api \
-     -e BRIDGE_API_TOKEN=<token> \
-     -- uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp
-   ```
-3. Verify: `claude mcp list` should show `bridge-api-guide`.
-4. In each app repo whose agents should deploy through it, add the steer so
-   they know it's there:
-   ```bash
-   uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp \
-     bridge-mcp-init --instructions-only --repo /path/to/that-app
-   ```
-   Commit the resulting `AGENTS.md` block.
-5. Done. Any agent in that repo now knows to reach for `list_apps` /
-   `deploy_app` / `get_deployment` / `get_deployment_log` when asked to deploy.
-
-Need a single repo to own its own config instead of user-scope (e.g. to share
-via a committed `.mcp.json`)? See [Per-project alternative](#per-project-alternative-share-with-teammates)
-below.
-
 ## What it exposes
 
 **Tools** (see [Configuration](#configuration) for required env vars)
@@ -68,100 +40,121 @@ MCP client config that launches this server):
   match the token The Bridge is configured with (`BRIDGE_API_TOKEN` env var or
   the `api_token` settings field on that server).
 
-## Use it across ALL your projects (recommended)
+## Installing
 
-The goal: agents in any of your apps know how to deploy that app to The Bridge,
-without hand-editing each repo's MCP config.
+### Prerequisite
 
-No install step — `uvx` fetches and caches `bridge-mcp` straight from GitHub on
-first launch. Nothing to put on PATH, nothing to upgrade by hand.
+[`uv`](https://docs.astral.sh/uv/) installed. That's it — `uvx` fetches and
+caches `bridge-mcp` straight from GitHub on first launch. No `pip install`,
+no cloning this repo, nothing to put on PATH.
 
-### 1. Register it for every project (user scope)
+### Choose a scope
 
-`claude mcp add --scope user` has no live env-var expansion — `-e` only takes
-literal values, baked in at add-time. To pull from an existing `.env` instead
-of hand-typing the token, export it into the shell first and let the shell
-fill in the literal:
+Two ways to register the server — pick one:
 
-```bash
-set -a; source .env; set +a   # exports BRIDGE_API_BASE_URL / BRIDGE_API_TOKEN
-claude mcp add bridge-api-guide --scope user \
-  -e BRIDGE_API_BASE_URL="$BRIDGE_API_BASE_URL" \
-  -e BRIDGE_API_TOKEN="$BRIDGE_API_TOKEN" \
-  -- uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp
-```
+- **Global / user scope** (recommended default): register once per machine,
+  credentials baked in at registration time, available in every project
+  automatically. No per-repo config file, no re-exporting env vars. Best if
+  you're the only one who needs it, or each teammate is fine registering it
+  themselves.
+- **Per-project**: the server registration itself is committed to a repo's
+  `.mcp.json` so any teammate who clones it gets it automatically. Trades
+  that convenience for needing `BRIDGE_API_BASE_URL` / `BRIDGE_API_TOKEN` to
+  be present in the environment every time `claude` launches.
 
-Re-run `claude mcp add ... --scope user` (it overwrites) whenever the token
-rotates. User scope = available in **every** project on this machine. Verify
-with `claude mcp list`. (No per-repo `.mcp.json` needed.)
+Either way, every app repo whose agents should deploy through it also needs
+the `AGENTS.md` steer — that part is scope-independent (see step 3 of Option
+A below).
 
-Want the value to actually live-resolve from the environment on every launch
-instead of being baked in once? That's only supported for project-scope
-`.mcp.json` — see [Per-project alternative](#per-project-alternative-share-with-teammates).
+### Option A — Global / user scope
 
-### 2. Tell each app's agents to use it
+1. Register the server, once, for this machine:
+   ```bash
+   claude mcp add bridge-api-guide --scope user \
+     -e BRIDGE_API_BASE_URL=http://localhost:3000/api \
+     -e BRIDGE_API_TOKEN=<token> \
+     -- uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp
+   ```
+   Pulling the values from an existing `.env` instead of hand-typing the
+   token — `claude mcp add --scope user` only takes literal `-e` values, so
+   export into the shell first and let it fill in the literal:
+   ```bash
+   set -a; source .env; set +a   # exports BRIDGE_API_BASE_URL / BRIDGE_API_TOKEN
+   claude mcp add bridge-api-guide --scope user \
+     -e BRIDGE_API_BASE_URL="$BRIDGE_API_BASE_URL" \
+     -e BRIDGE_API_TOKEN="$BRIDGE_API_TOKEN" \
+     -- uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp
+   ```
+   The values are written into `~/.claude.json` at add-time — nothing to
+   export on later launches. Re-run the same command (it overwrites)
+   whenever the token rotates.
+2. Verify: `claude mcp list` should show `bridge-api-guide`.
+3. In each app repo whose agents should deploy through it, add the steer so
+   they know it's there. Registration is already global, so only the
+   `AGENTS.md` block is needed — skip `.mcp.json` with `--instructions-only`:
+   ```bash
+   uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp \
+     bridge-mcp-init --instructions-only --repo /path/to/that-app
+   # or just run inside the repo:  bridge-mcp-init --instructions-only
+   ```
+   Commit the resulting `AGENTS.md` block.
+4. Done. Any agent in that repo now knows to reach for `list_apps` /
+   `deploy_app` / `get_deployment` / `get_deployment_log` when asked to
+   deploy.
 
-In each app repo, drop the deploy-instruction block (idempotent, replaceable).
-This needs the `bridge-mcp` package importable — either `uvx --from git+... bridge-mcp-init`,
-or from a local checkout of this repo:
+### Option B — Per-project (commit into one repo, share with teammates)
 
-```bash
-bridge-mcp-init --instructions-only --repo /path/to/that-app
-# or just run inside the repo:  bridge-mcp-init --instructions-only
-```
+1. From inside the target repo, run `bridge-mcp-init`. This needs the
+   `bridge-mcp` package importable — either `uvx --from git+...`, or from a
+   local checkout of this repo:
+   ```bash
+   uvx --from git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp bridge-mcp-init
+   bridge-mcp-init --dry-run       # preview only, write nothing
+   bridge-mcp-init --mcp-only      # only the .mcp.json entry, skip AGENTS.md
+   bridge-mcp-init --force         # overwrite an existing .mcp.json entry
+   ```
+   With no flags this writes both `.mcp.json` and the `AGENTS.md` block.
+   Re-running is idempotent — an existing entry/block is left in place
+   unless `--force` is given.
 
-This writes only the `AGENTS.md` block (skips `.mcp.json`, since registration is
-global). Commit it so the steer travels with the repo. Re-running replaces the
-block in place.
+2. The `.mcp.json` entry it writes includes `env` with `${VAR}` placeholders
+   — Claude Code expands these from its own environment each time it
+   starts, so no secret ever touches the committed file:
+   ```json
+   {
+     "mcpServers": {
+       "bridge-api-guide": {
+         "command": "uvx",
+         "args": [
+           "--from",
+           "git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp",
+           "bridge-mcp"
+         ],
+         "env": {
+           "BRIDGE_API_BASE_URL": "${BRIDGE_API_BASE_URL:-http://localhost:3000/api}",
+           "BRIDGE_API_TOKEN": "${BRIDGE_API_TOKEN}"
+         }
+       }
+     }
+   }
+   ```
 
-Each agent still needs the per-app runtime inputs to actually deploy: The Bridge
-base URL, a bearer token, and the app's id — these are operator-supplied, not
-baked into the server.
+3. Commit `.mcp.json` and the `AGENTS.md` block.
 
-## Per-project alternative (share with teammates)
+4. Each teammate needs `BRIDGE_API_BASE_URL` / `BRIDGE_API_TOKEN` exported
+   before launching `claude`:
+   ```bash
+   set -a; source .env; set +a
+   claude
+   ```
+   Claude Code has no untracked local-override file for `.mcp.json` (there
+   is no such thing as `.mcp.json.local`) — that env has to come from
+   somewhere at launch time. To avoid re-exporting every session, put the
+   `export` lines in your shell profile (`~/.zshrc` / `~/.bashrc`) once, or
+   use Option A (global scope) instead, which bakes the value in at
+   registration time and needs no export at all.
 
-To commit the server into a single repo instead of global registration:
-
-```bash
-bridge-mcp-init                 # both: .mcp.json entry + AGENTS.md block
-bridge-mcp-init --dry-run       # preview
-bridge-mcp-init --mcp-only      # only the .mcp.json entry
-bridge-mcp-init --force         # overwrite an existing entry
-```
-
-The emitted `.mcp.json` entry launches via `uvx --from git+...`, so any
-teammate with `uv` installed can use it as-is — no local checkout, no global
-install.
-
-Claude Code expands `${VAR}` / `${VAR:-default}` inside `.mcp.json` values,
-resolved from Claude Code's own environment each time it starts — so use
-placeholders instead of literal secrets. No token ever touches the committed
-file; each teammate just needs `BRIDGE_API_BASE_URL` / `BRIDGE_API_TOKEN`
-exported (e.g. `set -a; source .env; set +a`) before launching `claude`:
-
-```json
-{
-  "mcpServers": {
-    "bridge-api-guide": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/panda4man/the-bridge.git#subdirectory=bridge-mcp",
-        "bridge-mcp"
-      ],
-      "env": {
-        "BRIDGE_API_BASE_URL": "${BRIDGE_API_BASE_URL:-http://localhost:3000/api}",
-        "BRIDGE_API_TOKEN": "${BRIDGE_API_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-This is the version to commit. (`.mcp.json.local` / literal values still work
-if you'd rather not rely on shell export.)
-
-By default this tracks the default branch. Pin a tag/commit for
+By default the entry tracks the default branch. Pin a tag/commit for
 reproducibility by appending `@<ref>` before the `#subdirectory` fragment,
 e.g. `git+https://github.com/panda4man/the-bridge.git@v0.1.0#subdirectory=bridge-mcp`.
 

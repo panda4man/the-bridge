@@ -8,6 +8,10 @@ def test_mcp_entry_is_location_independent():
     assert init.mcp_entry() == {
         "command": "uvx",
         "args": ["--from", init.GIT_SOURCE, "bridge-mcp"],
+        "env": {
+            "BRIDGE_API_BASE_URL": "${BRIDGE_API_BASE_URL:-http://localhost:3000/api}",
+            "BRIDGE_API_TOKEN": "${BRIDGE_API_TOKEN}",
+        },
     }
 
 

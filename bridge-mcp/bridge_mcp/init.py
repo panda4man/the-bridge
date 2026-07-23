@@ -34,8 +34,18 @@ def mcp_entry() -> dict:
     machine. Pin a ref for reproducibility with ``GIT_SOURCE + "@<tag-or-sha>"``
     before the ``#subdirectory`` fragment if the default branch moving out
     from under a committed config is a concern.
+
+    ``env`` uses ``${VAR}`` placeholders — Claude Code expands these from its
+    own environment at launch, so no secret ever touches the committed file.
     """
-    return {"command": "uvx", "args": ["--from", GIT_SOURCE, "bridge-mcp"]}
+    return {
+        "command": "uvx",
+        "args": ["--from", GIT_SOURCE, "bridge-mcp"],
+        "env": {
+            "BRIDGE_API_BASE_URL": "${BRIDGE_API_BASE_URL:-http://localhost:3000/api}",
+            "BRIDGE_API_TOKEN": "${BRIDGE_API_TOKEN}",
+        },
+    }
 
 
 def find_repo_root(start: Path) -> Path:
