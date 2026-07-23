@@ -41,9 +41,10 @@ def test_render_index_lists_every_action():
         assert slug in idx
 
 
-def test_overview_mentions_auth_and_instruction_only():
+def test_overview_mentions_auth_and_tools():
     assert "Authorization: Bearer" in content.OVERVIEW
-    assert "instruction-only" in content.OVERVIEW
+    assert "list_apps" in content.OVERVIEW
+    assert "deploy_app" in content.OVERVIEW
 
 
 def test_workflows_format_without_leftover_placeholders():

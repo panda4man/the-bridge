@@ -41,5 +41,6 @@ def test_action_template_renders_for_concrete_uri():
 
 def test_deploy_and_watch_prompt_renders():
     text = _as_text(_run(server.mcp.get_prompt("deploy_and_watch", {"app_id": "3"})))
-    assert "/apps/3/deploy" in text
-    assert "X-Deploy-Done" in text
+    assert "deploy_app" in text
+    assert "app_id=3" in text
+    assert "deploy_done" in text

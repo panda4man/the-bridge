@@ -1,13 +1,21 @@
 # bridge-mcp
 
-An **instruction-only** MCP server for [The Bridge](../) deployment API.
+An MCP server for [The Bridge](../) deployment API.
 
-It does **not** call The Bridge. It serves authored guidance — MCP *resources*
-and *prompts* — that tells an AI agent exactly how to call the `/api` endpoints
-itself (with the agent's own bearer token). Think of it as a machine-readable,
-workflow-aware companion to the OpenAPI schema at `/api/openapi.json`.
+It exposes real **tools** that call the `/api` endpoints over HTTP, plus
+authored *resources* and *prompts* that explain the contract and recommended
+workflow. Think of it as a live, workflow-aware companion to the OpenAPI
+schema at `/api/openapi.json`.
 
 ## What it exposes
+
+**Tools** (see [Configuration](#configuration) for required env vars)
+- `list_branches(repo_url)` — no auth.
+- `list_apps()` — bearer auth.
+- `deploy_app(app_id)` — bearer auth. Queues a deployment; returns immediately.
+- `get_deployment(deployment_id)` — bearer auth.
+- `get_deployment_log(deployment_id, offset=0)` — bearer auth. Call again with
+  the returned `log_offset` to tail incrementally, until `deploy_done`.
 
 **Resources**
 - `bridge://api/overview` — base URL, bearer-token auth, error model.
@@ -21,7 +29,16 @@ workflow-aware companion to the OpenAPI schema at `/api/openapi.json`.
 - `find_and_deploy_branch(repo_url)` — resolve the app from a repo URL, deploy, watch.
 - `check_deploy_status(deployment_id)` — report current status + recent log.
 
-No tools are registered — by design, the server never performs HTTP requests.
+## Configuration
+
+The tools read these environment variables at call time (set them in the
+MCP client config that launches this server):
+
+- `BRIDGE_API_BASE_URL` — required. The Bridge's API base, e.g.
+  `http://localhost:3000/api`.
+- `BRIDGE_API_TOKEN` — required for every tool except `list_branches`. Must
+  match the token The Bridge is configured with (`BRIDGE_API_TOKEN` env var or
+  the `api_token` settings field on that server).
 
 ## Use it across ALL your projects (recommended)
 
@@ -43,7 +60,10 @@ with `uv tool upgrade bridge-mcp`.)
 ### 2. Register it for every project (user scope)
 
 ```bash
-claude mcp add bridge-api-guide --scope user -- bridge-mcp
+claude mcp add bridge-api-guide --scope user \
+  -e BRIDGE_API_BASE_URL=http://localhost:3000/api \
+  -e BRIDGE_API_TOKEN=<token> \
+  -- bridge-mcp
 ```
 
 User scope = available in **every** project on this machine. Verify with
@@ -78,10 +98,22 @@ bridge-mcp-init --force         # overwrite an existing entry
 ```
 
 The emitted `.mcp.json` entry uses the bare on-PATH command, so teammates must
-also `uv tool install` the package:
+also `uv tool install` the package. Add the required env vars to it before
+committing (or override them locally with `.mcp.json.local` / your client's
+env support):
 
 ```json
-{ "mcpServers": { "bridge-api-guide": { "command": "bridge-mcp" } } }
+{
+  "mcpServers": {
+    "bridge-api-guide": {
+      "command": "bridge-mcp",
+      "env": {
+        "BRIDGE_API_BASE_URL": "http://localhost:3000/api",
+        "BRIDGE_API_TOKEN": "<token>"
+      }
+    }
+  }
+}
 ```
 
 ## Local development
@@ -91,5 +123,9 @@ cd bridge-mcp
 uv sync                          # install deps incl. dev
 uv run bridge-mcp                # run server over stdio
 uv run mcp dev bridge_mcp/server.py   # MCP Inspector
-uv run pytest                    # 22 tests
+uv run pytest                    # 44 tests
 ```
+
+Run the server against a real Bridge instance by setting
+`BRIDGE_API_BASE_URL` / `BRIDGE_API_TOKEN` before `uv run bridge-mcp` or
+`uv run mcp dev`.
