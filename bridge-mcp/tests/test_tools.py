@@ -77,6 +77,26 @@ def test_deploy_app_tool_404_surfaces_as_tool_error():
 
 
 @respx.mock
+def test_list_apps_tool_401_surfaces_as_tool_error():
+    respx.get(f"{BASE}/apps").mock(return_value=httpx.Response(401, json={"error": "Unauthorized"}))
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError) as exc_info:
+        _call_tool("list_apps", {})
+    assert "Unauthorized" in str(exc_info.value)
+
+
+@respx.mock
+def test_list_apps_tool_503_surfaces_as_tool_error_distinct_from_401():
+    respx.get(f"{BASE}/apps").mock(return_value=httpx.Response(503, json={"error": "API token not configured"}))
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError) as exc_info:
+        _call_tool("list_apps", {})
+    assert "API token not configured" in str(exc_info.value)
+
+
+@respx.mock
 def test_get_deployment_log_tool_round_trips():
     respx.get(f"{BASE}/deployments/42/log", params={"offset": 0}).mock(
         return_value=httpx.Response(
