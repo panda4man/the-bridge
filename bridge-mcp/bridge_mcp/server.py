@@ -62,7 +62,8 @@ def check_deploy_status(deployment_id: str) -> str:
 
 @mcp.tool()
 def list_branches(repo_url: str) -> dict:
-    """List remote git branches for a repo URL. No auth required."""
+    """List remote git branches for a repo URL. No auth required. Never
+    raises on failure — check for an "error" key if branches is empty."""
     return client.list_branches(repo_url)
 
 

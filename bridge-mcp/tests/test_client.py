@@ -38,6 +38,15 @@ def test_list_branches_never_raises_on_embedded_error():
 
 
 @respx.mock
+def test_list_apps_transport_error_is_wrapped():
+    respx.get(f"{BASE}/apps").mock(side_effect=httpx.ConnectError("Connection refused"))
+    with pytest.raises(client.BridgeApiError) as exc_info:
+        client.list_apps()
+    assert exc_info.value.status_code == 0
+    assert not isinstance(exc_info.value, client.BridgeApiConfigError)
+
+
+@respx.mock
 def test_list_apps_happy_path():
     apps = [{"id": 1, "name": "widgets", "branch": "main", "status": "idle", "repo_url": "https://x.git"}]
     respx.get(f"{BASE}/apps").mock(return_value=httpx.Response(200, json=apps))

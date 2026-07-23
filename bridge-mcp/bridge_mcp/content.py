@@ -194,39 +194,41 @@ def render_index() -> str:
 WORKFLOW_DEPLOY_AND_WATCH = """\
 Goal: deploy app **{app_id}** and follow it to completion.
 
-1. POST `{base}/apps/{app_id}/deploy` with `Authorization: Bearer <token>`.
-   Read the `deployment_id` from the 202 response. (404 means the app id is wrong
-   — use list-apps to find the right one.)
-2. Tail the log: GET `{base}/deployments/<deployment_id>/log?offset=0`. Print the
-   text chunk. Remember the `X-Log-Offset` response header.
-3. Repeat step 2 using `offset=<last X-Log-Offset>`, appending each new chunk,
-   until the `X-Deploy-Done` header is `true`.
-4. Confirm the outcome with GET `{base}/deployments/<deployment_id>` and report
-   the final `status` (`success` or `failed`) plus `commit_sha`/`commit_message`.
+1. Call the `deploy_app` tool with `app_id={app_id}`. Read `deployment_id` from
+   the result. (A "not found" tool error means the app id is wrong — call
+   `list_apps` to find the right one.)
+2. Tail the log: call `get_deployment_log` with `deployment_id` and `offset=0`.
+   Print the `text` chunk. Remember the returned `log_offset`.
+3. Repeat step 2 passing `offset=<last log_offset>`, appending each new chunk,
+   until the result's `deploy_done` is `true`.
+4. Confirm the outcome by calling `get_deployment` and report the final
+   `status` (`success` or `failed`) plus `commit_sha`/`commit_message`.
 
-Do not declare success from the 202 in step 1 — only from a terminal status.
+Do not declare success from `deploy_app`'s result in step 1 — only from a
+terminal status.
 """
 
 WORKFLOW_FIND_AND_DEPLOY_BRANCH = """\
 Goal: deploy the app tracking repo **{repo_url}**.
 
-1. (Optional) GET `{base}/branches?repo_url={repo_url}` to confirm available
-   branches. No auth needed.
-2. GET `{base}/apps` (bearer auth) and find the app whose `repo_url` matches
-   {repo_url}; note its `id` and current `branch`/`status`.
-3. POST `{base}/apps/<id>/deploy` (bearer auth) and capture `deployment_id`.
-4. Follow the deploy to completion as in the deploy_and_watch workflow
-   (tail the log by `offset`/`X-Log-Offset` until `X-Deploy-Done: true`, then
-   read the final status).
+1. (Optional) Call `list_branches` with `repo_url={repo_url}` to confirm
+   available branches. No auth needed.
+2. Call `list_apps` and find the app whose `repo_url` matches {repo_url}; note
+   its `id` and current `branch`/`status`.
+3. Call `deploy_app` with that `id` and capture `deployment_id` from the result.
+4. Follow the deploy to completion as in the deploy_and_watch workflow (tail
+   with `get_deployment_log` using `offset`/`log_offset` until `deploy_done` is
+   `true`, then read the final status with `get_deployment`).
 """
 
 WORKFLOW_CHECK_DEPLOY_STATUS = """\
 Goal: report the current state of deployment **{deployment_id}** without waiting.
 
-1. GET `{base}/deployments/{deployment_id}` (bearer auth) for `status`,
+1. Call `get_deployment` with `deployment_id={deployment_id}` for `status`,
    `commit_sha`, `commit_message`, `started_at`, `finished_at`, `log_length`.
-2. GET `{base}/deployments/{deployment_id}/log?offset=0` once to show the log so
-   far. The `X-Deploy-Done` header tells you whether it is still running.
+2. Call `get_deployment_log` with `deployment_id={deployment_id}`, `offset=0`
+   once to show the log so far. The result's `deploy_done` tells you whether
+   it is still running.
 3. Summarize: is it pending/running or terminal (success/failed), and the latest
    log tail.
 """
