@@ -123,7 +123,7 @@ cd bridge-mcp
 uv sync                          # install deps incl. dev
 uv run bridge-mcp                # run server over stdio
 uv run mcp dev bridge_mcp/server.py   # MCP Inspector
-uv run pytest                    # 41 tests
+uv run pytest                    # 44 tests
 ```
 
 Run the server against a real Bridge instance by setting
