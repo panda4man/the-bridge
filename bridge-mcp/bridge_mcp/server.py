@@ -1,12 +1,13 @@
-"""FastMCP server exposing instruction-only resources and prompts for The Bridge.
+"""FastMCP server for The Bridge deployment API.
 
-No tools are registered: this server never performs HTTP calls. It hands the
-agent the contract and the workflow, and the agent makes the calls itself.
+Exposes both instruction resources/prompts (the contract and workflow guides)
+and real tools that call The Bridge over HTTP, configured via the
+BRIDGE_API_BASE_URL / BRIDGE_API_TOKEN environment variables (see client.py).
 """
 
 from mcp.server.fastmcp import FastMCP
 
-from . import content
+from . import client, content
 
 mcp = FastMCP("bridge-api-guide")
 
@@ -55,6 +56,40 @@ def check_deploy_status(deployment_id: str) -> str:
     return content.WORKFLOW_CHECK_DEPLOY_STATUS.format(
         base=content.API_BASE, deployment_id=deployment_id
     )
+
+
+# ---- Tools (real HTTP calls) -----------------------------------------------
+
+@mcp.tool()
+def list_branches(repo_url: str) -> dict:
+    """List remote git branches for a repo URL. No auth required."""
+    return client.list_branches(repo_url)
+
+
+@mcp.tool()
+def list_apps() -> list[dict]:
+    """List all apps registered in The Bridge."""
+    return client.list_apps()
+
+
+@mcp.tool()
+def deploy_app(app_id: int) -> dict:
+    """Trigger a deployment for an app. Returns immediately once queued — poll
+    get_deployment / get_deployment_log for progress, don't assume success."""
+    return client.deploy_app(app_id)
+
+
+@mcp.tool()
+def get_deployment(deployment_id: int) -> dict:
+    """Get a deployment's current status, commit info, and log length."""
+    return client.get_deployment(deployment_id)
+
+
+@mcp.tool()
+def get_deployment_log(deployment_id: int, offset: int = 0) -> dict:
+    """Read a chunk of a deployment's log starting at offset. Tail by calling
+    again with offset=log_offset from the previous response, until deploy_done."""
+    return client.get_deployment_log(deployment_id, offset)
 
 
 def main() -> None:

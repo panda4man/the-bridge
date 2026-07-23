@@ -10,12 +10,14 @@ API_BASE = "/api"
 OVERVIEW = """\
 # The Bridge Deployment API — Agent Guide
 
-This MCP server is **instruction-only**. It never calls The Bridge for you.
-It tells you exactly how to make the HTTP calls yourself with your own
-credentials. Read the relevant action guide, then issue the request.
+This MCP server exposes real **tools** (`list_branches`, `list_apps`,
+`deploy_app`, `get_deployment`, `get_deployment_log`) that call The Bridge
+over HTTP for you — plus these resources and prompts, which explain the
+contract and the recommended workflow so you use the tools correctly.
 
 ## Base URL
-All endpoints live under `{base}` on the host where The Bridge runs
+The tools call `{base}` on the host where The Bridge runs, configured via the
+`BRIDGE_API_BASE_URL` environment variable set for this MCP server
 (e.g. `http://localhost:3000{base}`). The OpenAPI 3.0 schema is served at
 `{base}/openapi.json` and interactive docs at `{base}/docs`.
 
@@ -24,9 +26,10 @@ Protected endpoints require a bearer token:
 
     Authorization: Bearer <token>
 
-The token is configured on the server via the `BRIDGE_API_TOKEN` env var or the
-`api_token` settings field. You must already possess it — this server will not
-provide or proxy it.
+The tools read it from the `BRIDGE_API_TOKEN` environment variable set for
+this MCP server — it is not passed as a tool argument. On the Bridge side, the
+token is configured via the `BRIDGE_API_TOKEN` env var or the `api_token`
+settings field.
 
 ## Conventions & error model
 - Responses are JSON unless noted (the deployment log endpoint returns
