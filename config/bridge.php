@@ -10,9 +10,16 @@ return [
     | Base directory into which application repositories are cloned before
     | each deploy. Equivalent to REPOS_PATH in the original Express app.
     |
+    | A single trailing slash is stripped here, once, so every consumer of
+    | config('bridge.repos_path') gets an already-normalised value — mirrors
+    | reference/src/validators/appValidators.ts:9's
+    | `.replace(/\/$/, '')`. Without this, BRIDGE_REPOS_PATH=/repos/ doubles
+    | the separator wherever a path is joined onto it (join(reposPath(), ...)
+    | equivalent). Do not normalise again downstream; this is the one place.
+    |
     */
 
-    'repos_path' => env('BRIDGE_REPOS_PATH', '/repos'),
+    'repos_path' => preg_replace('#/$#', '', env('BRIDGE_REPOS_PATH', '/repos')),
 
     /*
     |--------------------------------------------------------------------------
