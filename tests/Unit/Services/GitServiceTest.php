@@ -228,4 +228,82 @@ class GitServiceTest extends TestCase
 
         $this->assertArrayNotHasKey('GIT_SSH_COMMAND', $runner->calls[0]['env']);
     }
+
+    /**
+     * checkout()/revParseHead()/lastCommitSubject() were added in Phase 3 so
+     * every git argv deployApp.ts issues (checkout <sha>, rev-parse HEAD,
+     * log -1 --format=%s) lives in GitService alongside the rest, with the
+     * same FakeProcessRunner coverage as clone()/pull()/lsRemote().
+     */
+    public function test_checkout_issues_the_exact_verbatim_command(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueSuccess();
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $service->checkout('/tmp/existing', 'aabbccddee112233445566778899aabbccddee11');
+
+        $this->assertSame(
+            ['git', 'checkout', 'aabbccddee112233445566778899aabbccddee11'],
+            $runner->calls[0]['command']
+        );
+        $this->assertSame('/tmp/existing', $runner->calls[0]['cwd']);
+    }
+
+    public function test_checkout_throws_on_failure(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueFailure(1, '', "error: pathspec 'deadbeef' did not match any file(s) known to git");
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("error: pathspec 'deadbeef' did not match any file(s) known to git");
+        $service->checkout('/tmp/existing', 'deadbeef');
+    }
+
+    public function test_rev_parse_head_returns_trimmed_sha(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueSuccess("aabbccddee112233445566778899aabbccddee11\n");
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $sha = $service->revParseHead('/tmp/existing');
+
+        $this->assertSame('aabbccddee112233445566778899aabbccddee11', $sha);
+        $this->assertSame(['git', 'rev-parse', 'HEAD'], $runner->calls[0]['command']);
+        $this->assertSame('/tmp/existing', $runner->calls[0]['cwd']);
+    }
+
+    public function test_rev_parse_head_throws_on_failure(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueFailure(128, '', 'fatal: not a git repository');
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $this->expectException(RuntimeException::class);
+        $service->revParseHead('/tmp/not-a-repo');
+    }
+
+    public function test_last_commit_subject_returns_trimmed_message(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueSuccess("Fix the thing\n");
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $message = $service->lastCommitSubject('/tmp/existing');
+
+        $this->assertSame('Fix the thing', $message);
+        $this->assertSame(['git', 'log', '-1', '--format=%s'], $runner->calls[0]['command']);
+        $this->assertSame('/tmp/existing', $runner->calls[0]['cwd']);
+    }
+
+    public function test_last_commit_subject_throws_on_failure(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueFailure(128, '', 'fatal: your current branch does not have any commits yet');
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $this->expectException(RuntimeException::class);
+        $service->lastCommitSubject('/tmp/existing');
+    }
 }

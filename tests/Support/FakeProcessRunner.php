@@ -115,7 +115,25 @@ final class FakeProcessRunner implements ProcessRunner
             'idleTimeout' => $idleTimeout,
         ];
 
-        $next = array_shift($this->queue) ?? new ProcessResult(0, '', '');
+        if ($this->queue === []) {
+            // Deliberately strict. This used to fall back to a silent
+            // ProcessResult(0, '', ''), which let a test queue fewer
+            // responses than the code under test makes calls and still pass
+            // — the surplus calls silently "succeeded" with empty output.
+            // QC round 2 found exactly that: a test that queued 9 responses
+            // for 11 calls, drifted onto a git branch it never meant to
+            // exercise, and ended with an empty commit_sha while asserting
+            // nothing about it. Failing loudly here makes queue misalignment
+            // a test error at the call that overran, not a silent wrong-path
+            // pass several calls later.
+            throw new LogicException(
+                'FakeProcessRunner: queue exhausted, but run() was called with: '
+                .implode(' ', $command)
+                .'. Queue one response per expected process invocation.'
+            );
+        }
+
+        $next = array_shift($this->queue);
 
         if ($next instanceof Throwable) {
             throw $next;

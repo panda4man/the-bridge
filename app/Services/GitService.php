@@ -65,6 +65,36 @@ final class GitService
         return $branches;
     }
 
+    /**
+     * Check out a specific commit SHA in an already-cloned repo. Used by
+     * Phase 3's rollback path (`deployApp.ts`'s `execFileSync('git',
+     * ['checkout', dep.rollback_sha], { cwd: app.path })`) after `pull()` has
+     * already brought the working copy up to date. Throws (via mustRun) on a
+     * non-zero exit, exactly like the reference's execFileSync.
+     */
+    public function checkout(string $repoPath, string $sha): void
+    {
+        $this->mustRun(['git', 'checkout', $sha], $repoPath);
+    }
+
+    /**
+     * `git rev-parse HEAD`, trimmed. Ported from deployApp.ts's
+     * `execSync('git rev-parse HEAD', { cwd: app.path })`.
+     */
+    public function revParseHead(string $repoPath): string
+    {
+        return trim($this->mustRun(['git', 'rev-parse', 'HEAD'], $repoPath)->output);
+    }
+
+    /**
+     * `git log -1 --format=%s`, trimmed. Ported from deployApp.ts's
+     * `execSync('git log -1 --format=%s', { cwd: app.path })`.
+     */
+    public function lastCommitSubject(string $repoPath): string
+    {
+        return trim($this->mustRun(['git', 'log', '-1', '--format=%s'], $repoPath)->output);
+    }
+
     public function pull(string $repoPath, string $branch): string
     {
         // Mirrors `.catch(() => {})` in the reference — best-effort, failure ignored.

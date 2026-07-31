@@ -1044,6 +1044,445 @@ design:
   `HealthPoller::pollDue()` being called directly to being called from
   inside a job.
 
+## Phase 3 — the deploy pipeline
+
+`app/Jobs/DeployApp.php` ports `reference/src/jobs/deployApp.ts` — the git
+phase, the compose phase (3 sub-commands × up to 3 attempts each), the
+post-deploy phase (pre-flight + exec), success/failure bookkeeping, Slack
+notification, and auto-rollback. `App\Services\GitService` gained three
+methods (`checkout()`, `revParseHead()`, `lastCommitSubject()`) so every git
+argv the job needs still lives in one place, per Phase 2's own guidance.
+
+`php artisan test` — **211 tests, 535 assertions, all green.** Measured
+breakdown, not arithmetic (an earlier version of this paragraph claimed
+"207 = 162 + 6 + 23 + 6", which sums to 197; QC round 2 caught it):
+
+| | tests | assertions |
+|---|---|---|
+| Phase 2 baseline, unchanged by this phase | 151 | — |
+| `GitServiceTest` (11 at Phase 2 + 6 new here) | 17 | 45 |
+| `DeployAppTest` (new this phase) | 43 | 193 |
+| **Total** | **211** | **535** |
+
+`DeployAppTest`'s 43 cases are 8 ported reference cases plus the argv/env/
+timeout pinning tests, plus 18 added by QC fix round 1 (B1–B18), 6 by round 2
+(B6-full, B8, B9, B10, B12, B13 — see "Verified by mutation" below), and 4 by
+round 3 (see "QC round 3" at the end of this section).
+
+### The process seam needed no changes
+
+Phase 2 predicted this and it held: `ProcessRunner::run()`'s existing
+`idleTimeout`/`timeout: null`/`$onOutput` signature and the stall-as-a-result
+contract (`ProcessResult->timedOut`) covered everything the job needs —
+incremental log streaming into `Deployment::appendLog()`, the idle-vs-total
+timeout split (60s for compose `pull` and for exec steps, 300s for `down`/
+`up`), and treating a stall as a retryable exit-code-1 rather than a thrown
+exception. Nothing in `App\Services\Process\` was touched this phase.
+
+### No injected `composeRunner`/`execStep` closures — faked one layer down
+
+The reference's `DeployAppOptions` accepts `composeRunner`/`execStep`
+overrides so its tests can swap in a mock without a real `spawn()`. This port
+has no equivalent constructor option: `DeployApp` builds the `docker compose
+...`/`docker compose exec ...` argv itself and calls `ProcessRunner::run()`
+directly, the same seam `GitService`/`ContainerStatus` already use. Binding
+`Tests\Support\FakeProcessRunner` as the container's `ProcessRunner` makes
+every shell-out the job performs — git, compose, exec — observable by argv,
+env, cwd, timeout, and idleTimeout, which is strictly more than the
+reference's own tests ever pinned (they never asserted the literal `docker
+compose` command line at all).
+
+### Tests call `handle()` directly, not `::dispatch()` — and why that matters
+
+`phpunit.xml` sets `QUEUE_CONNECTION=sync` for the test environment. Under a
+sync queue, `Job::dispatch()` runs the job **synchronously, in-process**, not
+"later." That means the auto-rollback's `self::dispatch($rollback->id)`
+inside the catch block would, if the *outer* test invocation also went
+through `DeployApp::dispatch()`, actually execute a second full deploy
+recursively inside the same test — consuming more of the same
+`FakeProcessRunner`'s queued responses in an order the test didn't plan for,
+and, since the guard against chaining checks `rollback_sha` (not a depth
+counter), running to completion on responses the test never queued for it.
+(This used to read "silently resolving via the fake's empty-queue default" —
+`FakeProcessRunner` no longer has one; QC round 3 made an exhausted queue
+throw. The recursion hazard itself is unchanged, it now just fails loudly.)
+
+Every test in `tests/Unit/DeployAppTest.php` instead calls
+`app()->call([new DeployApp($id), 'handle'])` — direct method invocation via
+the container, which resolves `GitService`/`ContainerStatus`/`ProcessRunner`
+exactly as a real queue worker would, but does **not** go through the Bus
+dispatcher for the invocation under test. The *only* place a nested dispatch
+can still happen is the auto-rollback call itself, and the tests that reach
+it wrap it in `Bus::fake()` and assert on it explicitly
+(`Bus::assertDispatched(DeployApp::class, fn ($job) => $job->deploymentId ===
+$rollback->id)` / `Bus::assertNotDispatched(...)`), rather than letting a
+second deploy actually run. Phase 4/5, which will call `DeployApp::dispatch()`
+for real, don't need to know any of this — it's purely a test-construction
+concern — but a future phase adding more `DeployApp` tests should keep using
+`app()->call(...)` rather than `::dispatch()` for the same reason.
+
+### Constructing an "App not found" test required working around SQLite's FK-pragma-mid-transaction rule
+
+`deployments.app_id` has `->constrained('apps')->cascadeOnDelete()` (Phase
+1), so under normal operation deleting an `App` also deletes its
+`Deployment`s — meaning `Deployment::find()` would already fail before
+`App::find()` is ever reached, and "App {id} not found" looks structurally
+unreachable. Reproducing the scenario for a test (an orphaned `Deployment`
+row whose `app_id` points nowhere) requires disabling FK enforcement for one
+`DELETE`. That in turn ran into a second, sharper problem: **SQLite silently
+ignores `PRAGMA foreign_keys = OFF` while a transaction is open**, and
+`RefreshDatabase` wraps every test in one — verified empirically (querying
+the pragma immediately after "disabling" it inside a normal test still
+reports `1`, and the delete still cascades).
+
+`DeployAppTest::test_throws_when_app_not_found` works around this by calling
+`DB::commit()` to close `RefreshDatabase`'s wrapping transaction, toggling
+the pragma, deleting, re-enabling FK enforcement, and reopening a transaction
+(so `RefreshDatabase`'s own `tearDown()` still has one to roll back). The
+side effect: this test's writes are genuinely committed to the shared
+`:memory:` SQLite connection (which persists across test classes within one
+`php artisan test` run), so the test explicitly deletes its own orphaned row
+in a `finally` block, committing *that* too — otherwise it leaks into every
+test that runs afterward in the same process. This was not theoretical: the
+first version of this test left the orphan behind, and
+`ResetStuckDeploymentsTest`'s exact-count assertions failed as a downstream
+symptom. Confirmed clean afterward by running the full suite with
+`--order-by=random` three times.
+
+Net effect for later phases: "App {id} not found" is real defensive code —
+worth keeping, since nothing prevents a future schema change from decoupling
+the two tables — but under the current cascade constraint it cannot happen
+via ordinary use. Phase 4/5 do not need to build any UI/API path that
+triggers it.
+
+### Verified by mutation
+
+Every mutation below was applied by hand, the targeted test(s) re-run and
+confirmed failing, then the code restored and the full suite re-confirmed
+green:
+
+- Removing `Deployment::findLastSuccessful()`'s `->where('app_id', $appId)`
+  filter (the multi-app rule from Phase 1, applied here too — see
+  `test_auto_rollback_only_considers_the_failing_apps_own_deployment_history`,
+  which deliberately gives a *second* app the higher-id successful
+  deployment so an unscoped query would prefer the wrong SHA): caught, wrong
+  SHA asserted.
+- Folding the post-deploy pre-flight loop into the exec loop (checking and
+  executing each step in the same pass instead of a check-everything, then
+  exec-everything, sequence): caught by
+  `test_preflight_checks_all_steps_before_any_exec_runs`, which uses two
+  steps (`web` running, `worker` not) specifically so an interleaved
+  implementation would visibly exec `web` before ever reaching the failing
+  check on `worker`.
+- Changing the retry guard from `$attempt < 3` to `<= 3` (logging a spurious
+  third "Retrying in 5s..." after the final, exhausted attempt): caught by
+  `test_compose_exhausts_all_three_attempts_and_logs_exactly_two_retry_messages`,
+  which asserts the retry-message count is exactly 2, not "at least 2".
+- Adding `throw $e;` at the end of the catch block (the single most
+  important non-negotiable in the phase brief — "a failed deploy is a
+  successful job"): caught immediately — 19 of the file's cases error out
+  with the uncaught `RuntimeException` instead of asserting a `failed`
+  status. (Re-measured in QC round 2; the figure originally recorded here,
+  "10 of 23", predated the round-1 fix tests.)
+- Deleting the `if ($dep->rollback_sha) { return; }` loop guard in
+  `autoRollback()`: the *original* version of
+  `test_rollback_deploy_does_not_enqueue_another_rollback_loop_guard` did
+  **not** catch this — that app had no prior successful deployment, so
+  `findLastSuccessful()` returned `null` regardless of whether the guard ran,
+  and the mutation left all 23 tests green. Fixed by giving the app a prior
+  successful deployment before the rollback-flavoured deploy runs, so the
+  guard's absence is actually observable (a second, wrongly-chained rollback
+  gets created); re-ran the mutation afterward and it now fails as expected.
+  Recorded here because it's the same "coverage looked plausible but wasn't"
+  trap Phase 1/2 QC kept finding, caught this time before QC rather than
+  after.
+- Removing the `try { SlackNotifier::notify($dep); } catch (Throwable) {}`
+  wrapper in `notify()`: caught by
+  `test_slack_notification_failure_does_not_block_deploy_or_auto_rollback`
+  (`Setting::setValue('slack_webhook_url', ...)` plus
+  `Http::fake(fn () => throw new ConnectionException(...))`), which errors
+  out with the uncaught connection exception instead of completing.
+- Removing the `if ($result->timedOut) { ... return 1; }` branch from both
+  `runCompose()` and `runExecStep()` (falling through to `return
+  $result->exitCode`, which happens to also be `1` for a canned timeout
+  result — so this mutation is invisible to any test that only checks the
+  final status): caught by the two `test_compose_stall_on_*` tests and
+  `test_exec_step_stall_logs_...`, which assert the exact `\nERROR: process
+  stalled — no output for {N}s, killed.\n` text is present, not just that
+  the deploy eventually failed or retried.
+- Hardcoding `$idleTimeout = 300.0` (removing the `str_starts_with($subCmd,
+  'pull')` branch): caught by
+  `test_compose_phase_issues_the_exact_verbatim_command_sequence_with_ssh_key_present`,
+  which asserts `idleTimeout === 60.0` specifically for the `pull`
+  sub-command.
+- Adding `DOCKER_PROGRESS` to the exec-step env (the reference deliberately
+  omits it there — see "Command shapes" in the phase brief): caught by both
+  `test_exec_step_issues_the_exact_verbatim_command_with_ssh_key_present_and_no_docker_progress`
+  and `test_exec_step_omits_git_ssh_command_when_key_file_is_missing`, which
+  assert the exec env array exactly, not just that `GIT_SSH_COMMAND` is
+  present when expected.
+
+**Second QC round — B6-full, B8, B9, B10, B12, B13:**
+
+- **B6-full — the App lookup, and the two app-typed call sites it feeds,
+  were never proven app-scoped.** Every other test in the file creates only
+  one `App`, so `App::find($dep->app_id)` and something unscoped like
+  `App::query()->orderByDesc('id')->first()` are indistinguishable — both
+  return the only row in the table. Fixed with
+  `test_app_lookup_and_every_downstream_call_are_scoped_to_the_deployments_own_app`,
+  which creates three apps with distinct paths and distinct `deploy_steps`,
+  deliberately makes the deployed app (`appB`) the MIDDLE id (neither
+  highest nor lowest), and asserts every recorded process call — git,
+  compose, `docker compose ps`, exec — ran with `appB`'s path as cwd, that
+  the exec step used `appB`'s own service/command (not `appA`'s or
+  `appC`'s), and that `appA`/`appC` are untouched (status unchanged, zero
+  deployment rows). One test, four mutations, each verified individually
+  and restored: `App::find($dep->app_id)` → `App::query()->orderByDesc('id')->first()`
+  (caught — resolves the whole deploy against the wrong app, cwd mismatch
+  on every call); the same swapped to `orderBy('id')->first()` (caught —
+  `appB` being the middle id means BOTH ascending and descending
+  single-extreme queries land on a different, wrong app); the identical
+  swap at the `DeploySteps::resolve(...)` call site, both directions
+  (caught — the wrong app's `deploy_steps` get resolved, so pre-flight
+  checks a service name that was never queued as running and the deploy
+  fails instead of succeeding); and `ContainerStatus::forWorkDir('/nowhere')`
+  (caught directly — the `docker compose ps` call's cwd assertion fails
+  with `'/nowhere'` instead of `appB`'s path).
+- **B8 — the post-deploy pre-flight loosened to `!== null` would still
+  pass.** `test_preflight_fails_when_the_matching_service_is_present_but_not_running`
+  queues a container whose `State` is `"exited"` (present, but not
+  running) and asserts pre-flight still fails, the deployment is marked
+  `failed`, and zero exec calls were made. Verified by mutation: relaxing
+  `($container['state'] ?? null) === 'running'` to `!== null` flips this
+  test from failed to successful — caught.
+- **B9 — the auto-rollback guard's `$previous->commit_sha` half had no
+  test that could actually observe it.** A genuinely NULL `commit_sha` is
+  already excluded by `findLastSuccessful()`'s own `whereNotNull('commit_sha')`
+  filter (confirmed by reading the method, not run as a separate probe), so
+  `$previous` is `null` either way — a test built around a literal NULL
+  commit_sha cannot discriminate `if ($previous && $previous->commit_sha)`
+  from `if ($previous)`; both branches see a null `$previous` and behave
+  identically, so that framing was abandoned before being written, not
+  disproven empirically. An empty-STRING `commit_sha` passes the NOT NULL filter
+  (`$previous` comes back non-null) while still being falsy in PHP, which
+  is what actually exercises the guard's second condition.
+  `test_auto_rollback_guard_requires_a_truthy_commit_sha_not_just_a_non_null_previous_deployment`
+  uses this and asserts the exact `No previous successful deployment —
+  skipping auto-rollback` log line (verbatim em dash) plus zero rollback
+  rows created. Verified by mutation: `if ($previous && $previous->commit_sha)`
+  → `if ($previous)` makes this test fail with a rollback wrongly created
+  (log shows `Auto-rolling back to ` with an empty SHA) — caught.
+- **B10 — `findLastSuccessful()`'s `beforeId` bound had no dedicated test.**
+  The existing multi-app test
+  (`test_auto_rollback_only_considers_the_failing_apps_own_deployment_history`)
+  only pins the `app_id` filter, not the `id < beforeId` bound — a single
+  app can't separate "scoped to earlier deployments" from "scoped to
+  everything." `test_auto_rollback_never_selects_a_successful_deployment_created_after_the_failing_one`
+  creates the failing deployment FIRST (lower id), then a successful
+  deployment with a HIGHER id afterward, and asserts no rollback is
+  enqueued. Verified by mutation: `findLastSuccessful($dep->app_id, $dep->id)`
+  → `findLastSuccessful($dep->app_id, $dep->id + 100000)` makes the later,
+  higher-id deployment wrongly qualify — a rollback row gets created where
+  none should exist — caught.
+- **B12 — `$tries`/`$timeout` were never asserted, anywhere.**
+  `test_job_tries_and_timeout_properties_are_pinned` instantiates a bare
+  `DeployApp` and asserts `tries === 3` and `timeout === 0` directly.
+  Verified by mutation: `$tries = 3` → `1` and, separately, `$timeout = 0`
+  → `60` each fail this one test with the obvious "expected 3, got 1" /
+  "expected 0, got 60" message — caught both times.
+- **B13 — a try/catch around `DeploySteps::resolve()` that swallowed its
+  throw would silently report a broken deploy as successful.**
+  `DeploySteps::resolve()` is documented (Phase 1's "deploy_steps
+  serialisation decision" above) to throw `post-deploy: deploy_steps JSON
+  parse error` on malformed JSON — nothing in the existing suite actually
+  drove a malformed `deploy_steps` column through the job.
+  `test_malformed_deploy_steps_json_fails_the_deploy_instead_of_silently_running_zero_steps`
+  sets `deploy_steps` to `'{not json'` and asserts the deployment ends
+  `failed` with that exact message in the log. Verified by mutation:
+  wrapping the `DeploySteps::resolve($app)` call in
+  `try { ... } catch (Throwable) { $resolved = ['steps' => [], 'source' => 'none']; }`
+  makes this test fail — the deploy reports `success` with zero steps run
+  instead of failing loudly — caught.
+
+**Traps for later phases (4–7), generalized from this round:**
+
+- **A per-item flag needs a failure on a *later* item to discriminate.**
+  The pre-flight-then-exec pass structure only proves "runs before" if the
+  earlier item passes and a *later* one fails (see
+  `test_preflight_checks_all_steps_before_any_exec_runs`, first QC round).
+  The same shape applies anywhere a loop short-circuits, retries, or gates
+  on a per-item condition: a test where every item behaves identically
+  can't tell "checked all of them" from "checked one and assumed the
+  rest," and can't tell "the guard fired" from "there was nothing for the
+  guard to catch."
+- **stdout coverage does not imply stderr coverage.** Phase 2/3 both
+  re-learned this (B2 in the first QC round, for `runCompose`/`runExecStep`'s
+  `onOutput` callback) — a fake/mock that feeds a single output stream by
+  default will silently leave the other stream's wiring unpinned. Any test
+  double with separate stdout/stderr channels needs at least one assertion
+  that exercises each channel independently, not just the aggregate log.
+- **The two-app rule applies to the *entity lookup*, not only to scoped
+  queries.** Phase 1's original lesson (see "Multi-app scoping filters
+  need multi-app tests" above) was about `WHERE app_id = ?` clauses. B6-full
+  is the same lesson one level up: `App::find($id)` has no explicit scope
+  to drop, but it's just as vulnerable to being silently replaced by an
+  unscoped "grab a row" query — and a single-app test suite can't catch
+  that mutation any more than it could catch a missing `WHERE` clause. Any
+  code path that resolves a specific entity by id — not just a query that
+  filters a collection — needs a multi-row test proving the *right* row
+  came back, not just *a* row.
+
+### Things left out, deliberately
+
+- **No `sshKeyPath` constructor override on `DeployApp`.** The reference's
+  `DeployAppOptions.sshKeyPath` exists mainly so its tests can point at a
+  fixture key; this port's tests instead mutate `config(['bridge.ssh_key_path'
+  => ...])` directly (the same config Phase 2's `GitService` reads), so the
+  override was never needed. `GitService`'s own constructor still accepts an
+  explicit path for the same reason it did in Phase 2.
+- **`runCompose()`/`runExecStep()` are private, not extracted into a
+  service.** They're a thin, job-specific wrapper around
+  `ProcessRunner::run()` (argv assembly, env assembly, the stall-message
+  branch) with no reuse target elsewhere in the app — extracting them would
+  be the "speculative abstraction" the engineering brief warns against.
+- **No `ProcessRunner` changes.** Phase 2's QC pass already predicted and
+  built everything this phase needed of the production seam (see "The seam
+  fits" in the Phase 2 section above); this phase is the confirmation.
+  `FakeProcessRunner` did change, in QC round 3 — see below.
+
+### QC round 3 — the second adversarial pass
+
+A second independent mutation pass (136 mutations, one at a time, full suite
+per mutation, restore verified by hash) found **no defect in Phase 3
+production code**. `app/Jobs/DeployApp.php` was not modified by this round.
+String parity against `reference/src/jobs/deployApp.ts` is exact, including
+all four U+2014 em dashes. What it did find was seven test-side gaps. All are
+now closed, and each fix was verified by re-applying the exact mutation that
+had survived, confirming the suite goes red, confirming the *new* test is
+what fails, and restoring.
+
+- **`FakeProcessRunner` is now strict about an exhausted queue.** It used to
+  fall back to `new ProcessResult(0, '', '')`, so a test could queue fewer
+  responses than the code makes calls and still pass, with the surplus calls
+  silently "succeeding" with empty output. It now throws a `LogicException`
+  naming the argv that overran. **Queue exactly one response per expected
+  process invocation** in Phase 4+ tests.
+  - This was not hypothetical:
+    `test_deployment_and_app_are_marked_running_and_deploying_before_the_pipeline_starts`
+    hand-rolled its git queue, answered `git rev-parse --abbrev-ref HEAD`
+    with `''`, and so drove `GitService::pull()` down its branch-MISMATCH
+    path (`branch --list`, `checkout -b --track`) — which ate the two
+    commit-capture responses, left `commit_sha` empty, and overran the queue
+    by two calls. It passed while exercising a different code path than its
+    name claims. Making the fake strict fails **exactly** that one test
+    across the whole suite; it is now realigned and asserts `commit_sha`.
+- **`queueCommitCapture()` answers off the argv, not positionally.** Swapping
+  the two assignments in `runGitPhase()` —
+
+    ```php
+    $dep->commit_sha     = $git->revParseHead($app->path);
+    $dep->commit_message = $git->lastCommitSubject($app->path);
+    ```
+
+    — survived the whole suite, because swapping them also swaps which
+    positional response is dequeued, so both columns still landed correct.
+    Highest-consequence gap of the round: a commit *subject* in `commit_sha`
+    is what `autoRollback()` writes into `rollback_sha` and the rollback
+    deploy then hands to `git checkout`, so every later auto-rollback would
+    run `git checkout "Fix the thing"`. The helper now answers `rev-parse
+    HEAD` and `log -1 --format=%s` by matching the argv, and `fail()`s on
+    anything else.
+- **The intermediate `$dep->save()` after the git phase is now pinned.**
+  Deleting it survived — the columns stay dirty and get flushed by the later
+  `save()`. Not equivalent: `deployApp.ts:114` persists the SHA *before* the
+  compose phase, which `$timeout = 0` exists to let run for 40 minutes, so
+  the mutant leaves `commit_sha` NULL for that whole window (Phase 5/6 live
+  polling would show no commit for the entire build) and loses it outright
+  on a worker kill. Pinned by
+  `test_commit_sha_and_message_are_persisted_before_the_compose_phase_starts`,
+  which reads `$dep->fresh()` from inside a `queueCallable()` at the
+  compose-`pull` slot.
+- **A non-`RuntimeException` `Throwable` now goes through `handle()`.** Every
+  throwable in the file was a `RuntimeException`, so narrowing
+  `catch (Throwable $e)` to `catch (RuntimeException $e)` survived — and
+  under that mutant an `Error` escapes `handle()`, leaves the deployment
+  stuck in `running`, and `$tries = 3` re-runs the entire deploy three times.
+  The new test queues an `\Error` at `GitService::pull()`'s `git config
+  safe.directory *` call, which is deliberately not routed through that
+  class's `mustRun()` and has no try/catch of its own — so it reaches
+  `handle()`'s catch rather than being absorbed by `runCompose()`'s or
+  `runExecStep()`'s own `catch (Throwable)`.
+- **Compose exit codes other than 0 and 1 are now exercised.** Every failure
+  in the suite was exit 1 (`queueFailure(1, ...)` or a stall, which also
+  reports 1), leaving `if ($exit === 0)` indistinguishable from
+  `if ($exit !== 1)` — under which a `docker compose up` exiting 125 (daemon
+  unreachable) or 127 (binary missing) is treated as SUCCESS and the
+  post-deploy steps run against containers that never started. One
+  `queueFailure(125, ...)` case closes it.
+  - *Correction to the round-2 findings doc:* it listed
+    `return $result->exitCode;` → `return $result->exitCode === 0 ? 0 : 1;`
+    as a second survivor under the same finding. Re-checked: that one is an
+    **equivalent mutant**, and the new test does not kill it. Both call sites
+    only ever compare `$exit` against `0`; the exact non-zero value is never
+    logged, stored, or rethrown, and the reference does the same
+    (`resolve(code ?? 1)` at `deployApp.ts:48`). Nothing to fix.
+- **The exec-path spawn-failure assertion passed for the wrong reason.**
+  `assertStringContainsString("\nERROR: spawn ENOENT\n", ...)` was satisfied
+  by *adjacent* content — the leading `\n` from the preceding exec header,
+  the trailing `\n` from the outer catch's own `\nERROR: post-deploy step
+  failed…` — so stripping `runExecStep()`'s framing entirely left the
+  substring intact. (`runCompose()` escaped this only because its next line
+  starts `=== docker compose pull (attempt 2) ===`.) Now anchored to the
+  exec header immediately preceding it.
+- **`notify()`/`autoRollback()` ordering in the catch block is now pinned.**
+  Swapping them survived, though the port's order matches the reference
+  (`deployApp.ts:166` then `:169`). It *is* observable: `SlackNotifier`
+  attaches the last 20 log lines on failure only, so a rollback appended
+  first leaks its `Auto-rolling back to <sha>` line into the Slack payload of
+  the deployment that just failed.
+- **Test renamed.** `test_exec_step_stall_..._and_is_retried` →
+  `..._and_is_not_retried`, with an exec-call-count assertion. Exec steps
+  correctly have no retry (`deployApp.ts:147-153`); the old name contradicted
+  both the code and its sibling.
+
+Latent, not a live defect, worth knowing for Phase 4+: the in-memory SQLite
+database **does** persist across test classes within one process
+(`sqlite_sequence` shows ids leaking from the "App not found" test's
+deliberately committed rows). No test currently depends on ids starting at 1.
+
+### For Phase 4 (Filament actions), Phase 5 (API/webhook), Phase 7 (worker packaging)
+
+- **Dispatch with `App\Jobs\DeployApp::dispatch($deployment->id)`** after
+  creating a `pending` `Deployment` row. The job resolves the `Deployment`
+  and `App` itself from the id; nothing else needs to be passed in.
+- **`public $timeout = 0;` on the job is necessary but not sufficient.**
+  Laravel's queue worker enforces its own default 60-second timeout on top
+  of the job property. Phase 7's supervisord config MUST start the worker
+  with `php artisan queue:work --timeout=0` (or an equally explicit
+  override) — a `docker compose up -d --build` on a real app can legitimately
+  run far longer than 60 seconds, and the job property alone will not save a
+  worker started without it.
+- **Auto-rollback dispatches a second `DeployApp` job onto the same default
+  queue.** No custom queue name was introduced (per the brief). If Phase 2's
+  recommended `health` queue (a separate name for the self-rescheduling
+  `HealthPoller` job) is adopted in whichever phase builds it, remember
+  `DeployApp` — including the rollback it can chain — stays on `default`;
+  only give `health` its own name, so a single `queue:work --queue=deploys,health`
+  (or equivalent) still prioritizes deploys correctly.
+- **`Deployment::appendLog()` runs at 2 DB queries per output chunk** (Phase
+  1 note, restated because this phase is the first real high-volume caller):
+  a 40-minute build streaming output every second is ~4,800 queries against
+  the same row. Nothing in this phase's scope changes that; if it ever
+  becomes a real bottleneck, batching/coalescing chunks before calling
+  `appendLog()` is the likely fix, not changing `appendLog()`'s own
+  read-after-write safety.
+- **The job never reads `ProcessResult->output` for compose/exec calls** —
+  only the short `GitService::revParseHead()`/`lastCommitSubject()` calls do.
+  A future change that "simplifies" by reading `$result->output` after a
+  compose call instead of relying on `$onOutput` would silently reintroduce
+  the unbounded in-memory log buffering Phase 2 flagged as a real risk for a
+  long, verbose build — the callback is the only sanctioned path.
+
 ## Parity acceptance
 
 `reference/tests/` and `reference/src/services/*.test.ts` hold **115 cases**.
