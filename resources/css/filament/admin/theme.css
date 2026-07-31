@@ -1,0 +1,17 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/* --- Deploy log viewer (verbatim from public/lcars.css) --- */
+.lcars-log {
+  background: #0A0A0A;
+  color: #33FF33;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
+  font-size: 0.8rem;
+  overflow: auto;
+  height: 600px;
+  white-space: pre-wrap;
+}
