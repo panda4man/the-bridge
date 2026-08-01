@@ -18,6 +18,13 @@ use Filament\Support\Icons\Heroicon;
  * only an id and re-reads both rows itself, so the row must exist before the
  * worker can pick the job up. Then redirects to that deployment, which is
  * where the live log lives (Phase 6).
+ *
+ * `queue()` is the single place a deploy is enqueued from anywhere in the
+ * app — the panel (this action), the GitHub webhook
+ * (App\Http\Controllers\WebhookController), the token-authenticated API
+ * (App\Http\Controllers\Api\AppsController::deploy), and the parity-path
+ * deploy/rollback endpoints (App\Http\Controllers\ParityController) all call
+ * it rather than creating the row and dispatching by hand.
  */
 final class DeployAction
 {
@@ -39,12 +46,31 @@ final class DeployAction
             ));
     }
 
-    public static function queue(App $app): Deployment
+    /**
+     * $rollbackSha, when given, is carried onto the new deployment as
+     * `rollback_sha` — this is what turns a plain deploy into a rollback
+     * (App\Jobs\DeployApp checks out that SHA instead of the tracked
+     * branch's HEAD). Only set when non-null so a plain deploy's row has no
+     * `rollback_sha` key touched at all, matching Deployment::create()'s
+     * previous (pre-widening) behaviour exactly.
+     *
+     * Added so App\Filament\Actions\RollbackAction could delegate here
+     * instead of duplicating "create the pending row, then dispatch its id"
+     * a second time — see that class for the guards it still runs before
+     * calling this.
+     */
+    public static function queue(App $app, ?string $rollbackSha = null): Deployment
     {
-        $deployment = Deployment::create([
+        $attributes = [
             'app_id' => $app->id,
             'status' => DeploymentStatus::Pending,
-        ]);
+        ];
+
+        if ($rollbackSha !== null) {
+            $attributes['rollback_sha'] = $rollbackSha;
+        }
+
+        $deployment = Deployment::create($attributes);
 
         DeployApp::dispatch($deployment->id);
 

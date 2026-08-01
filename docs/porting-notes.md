@@ -456,7 +456,10 @@ trap for the phase named:
   a log offset for polling and accepts it back on the next request, must pick
   one unit and be internally consistent — it does not need to match the
   reference's unit, just itself.
-- **`apps.path`'s unique index reaches Phase 5, not just Phase 4.** A
+- **`apps.path`'s unique index reaches Phase 5, not just Phase 4.**
+  *(Superseded — Phase 5 found the API/webhook app-creation endpoints this
+  bullet anticipates do not exist. See "Corrections to earlier notes" in the
+  Phase 5 section.)* A
   Filament form can catch this with `->unique(ignoreRecord: true)` plus
   `->validationMessages(['unique' => 'An app already uses this path.'])`, but
   that only covers the form. The API and webhook app-creation endpoints (see
@@ -1711,6 +1714,317 @@ Killed and worth recording:
   by hand, so "create pending row, then dispatch its id" stays in one place.
 - **Nothing in this phase registered a route in `routes/web.php`.** That file
   is still empty of routes and its precedence warnings still apply verbatim.
+
+## Phase 5 — API, webhook, JSON endpoints
+
+`php artisan test` — **393 tests, 1081 assertions, all green**, in fixed order
+and under random-order seeds 1, 4242 and 31337. Measured breakdown of the 110
+added this phase:
+
+| | tests |
+|---|---|
+| `tests/Feature/ParityRoutesTest` | 36 |
+| `tests/Feature/Api/ApiDeployTest` | 29 |
+| `tests/Feature/WebhooksTest` | 11 |
+| `tests/Unit/Http/Middleware/RequireApiTokenTest` | 8 |
+| `tests/Unit/Services/ApiTokenResolverTest` | 8 |
+| `tests/Feature/Api/ApiBranchesTest` | 7 |
+| `tests/Feature/Api/ApiOpenApiTest` | 5 |
+| `tests/Unit/PollHealthChecksTest` | 5 |
+| `tests/Feature/PollHealthCommandTest` | 1 |
+
+### There are now four route files, and which one a route goes in is a decision
+
+`routes/web.php` is still empty of routes. The other three exist because a
+route's file determines its middleware, and for this phase that is load-bearing
+rather than cosmetic:
+
+| File | Loaded by | Prefix | Middleware |
+|---|---|---|---|
+| `web.php` | `withRouting(web:)` | none | `web` — session, CSRF |
+| `api.php` | `withRouting(api:)` | `/api` | `api` + `api.token` |
+| `webhook.php` | `withRouting(then:)`, bare `require` | none | **none** |
+| `parity.php` | `withRouting(then:)`, bare `require` | none | `api.token` |
+
+The `then:` closure runs after web/api/health are registered, and a bare
+`require` inside it is what produces a route with no group at all. Wrapping it
+in `Route::middleware('web')->group(...)` — the shape most examples show —
+would silently reintroduce CSRF.
+
+The webhook needs *both* exclusions and that is why it cannot live in either
+existing file: `web.php` gives it `PreventRequestForgery` and a 419 on every
+GitHub push, and `api.php` gives it a `/api` prefix its URL cannot have.
+
+### Fail-closed auth, and the one thing the reference gets away with
+
+`App\Services\ApiTokenResolver` layers `BRIDGE_API_TOKEN` over the `api_token`
+settings row, trimming both, and returns null when neither yields anything.
+`App\Http\Middleware\RequireApiToken` turns null into **503 "API token not
+configured"**. Empty does not mean public, and mutation
+`M1-fail-open-when-unconfigured` (pass through instead of 503) is killed.
+
+**The JSON error key is `error`, not `message`.** Laravel's own JSON error
+rendering uses `message`, and `bootstrap/app.php` declares
+`shouldRenderJsonWhen($request->is('api/*'))` — so anything produced by
+`abort(404)` has the wrong shape for this API. Every payload in this phase is
+built explicitly with `response()->json()`. `bridge-mcp/bridge_mcp/client.py`
+reads `body["error"]` and maps 503 to its own `BridgeApiConfigError`;
+mutation `M4-error-key-becomes-message` is killed.
+
+### Token comparison needs an equal-length wrong token to be tested at all
+
+`hash_equals()` guards both the bearer token and the webhook signature. The
+first QC pass found that every wrong-token test used a wrong token of a
+*different length* to the real one, so replacing `hash_equals($expected,
+$provided)` with a bare `strlen() === strlen()` left the whole suite green —
+i.e. any 9-character token would have authenticated against a 9-character
+secret. `test_returns_401_when_the_wrong_token_is_the_same_length_as_the_real_one`
+is the test that closes it. Mutation `M2-length-only-token-compare` is killed.
+
+The webhook's own `hash_equals` → `===` mutation (`W9`) **survives and is an
+equivalent mutant**: the two are behaviourally identical and differ only in
+constant-time execution, which no functional test can observe. Recorded rather
+than papered over with a test that would not actually discriminate. Do not
+"fix" it by relaxing the comparison — the timing property is the reason it is
+there.
+
+### Webhook parity details that look like bugs and are not
+
+- **HMAC is over `$request->getContent()`**, the raw bytes. Re-encoding a
+  decoded array changes them and every signature fails
+  (`W3-hmac-over-reencoded-body`, killed).
+- The compared string **includes the `sha256=` prefix** (`W2`, killed).
+- **A validly-signed request with a non-JSON body deploys.** The reference
+  catches the parse error, leaves the payload `{}`, finds no `ref`, and falls
+  through to enqueue. Ported as-is, pinned by
+  `test_non_json_body_with_valid_signature_deploys_anyway`. This is deliberate
+  reference behaviour, not an oversight to tighten into a 400.
+- A missing `ref` deploys; only an *extracted and different* branch skips.
+
+### `DeployAction::queue()` is now genuinely the only enqueue path
+
+Phase 4 left `RollbackAction` creating its own pending row and dispatching by
+hand, because `queue()` took no `rollback_sha`. The signature widened to
+`queue(App $app, ?string $rollbackSha = null)` and `RollbackAction` now
+delegates. Four callers, one implementation: the panel's deploy action, the
+rollback action, the webhook, and both deploy endpoints. Phase 4's rollback
+tests passed unmodified across the change, which is the evidence the
+delegation is faithful.
+
+### The parity endpoints are authenticated, and the reference is not
+
+`GET`/`POST /apps/{id}/env`, `GET /apps/{id}/containers`,
+`POST /apps/{id}/deploy` and `POST /apps/{id}/rollback` carry `api.token`.
+**Decided with the user, not defaulted into.**
+
+The reference has no authentication anywhere — it was a trusted-network Express
+app. Porting that faithfully would mean an unauthenticated `POST
+/apps/{id}/env` writing arbitrary content into a production app's `.env`, and a
+`GET` reading those secrets back, for anyone who can reach the host. Bearer
+auth keeps the URLs byte-identical, avoids the CSRF problem the `web` group
+would create for script callers, and puts a credential in front of the secret
+material. Mutation `P5-parity-routes-lose-auth` is killed.
+
+Consequences to know:
+
+- Every response is JSON, including the two paths where the reference sends
+  plain text (`res.status(404).send('Not found')`) and the two where it
+  redirects to `/deployments/:id`. There is no EJS page for a token-authenticated
+  machine caller to land on. Deploy and rollback both return **202** with
+  `{deployment_id, app_id, status}`, matching `POST /api/apps/{id}/deploy`.
+- **`POST /apps/{id}/rollback` re-adds the cross-app 404** that the panel does
+  not need — the one guard Phase 4 explicitly deferred here. The panel's action
+  is bound to a Deployment and reads the app off it; this endpoint takes both
+  ids, so without the check a caller rolls app A back to app B's commit.
+  `P1-cross-app-rollback-check-removed` is killed by
+  `test_rollback_returns_404_when_the_deployment_belongs_to_a_different_app`.
+- It does **not** restrict to successful source deployments. The reference's
+  route does not either — only its view hides the button — matching Phase 4's
+  decision to keep that a visibility rule.
+
+### A real bug this phase introduced and caught: global `TrimStrings`
+
+Laravel 13 moved `TrimStrings` and `ConvertEmptyStringsToNull` into the
+**global** middleware stack; earlier versions scoped `TrimStrings` to the `web`
+group. So it ran on the env-write endpoint despite that endpoint being outside
+`web` entirely, silently stripping the trailing newline a `.env` legitimately
+ends with — something the reference's `writeFileSync(..., content, 'utf-8')`
+never does.
+
+Fixed with `$middleware->trimStrings(except: ['content'])` in
+`bootstrap/app.php`. Mutation `T1-trimstrings-exception-reverted` is killed.
+
+**Why the existing Phase 4 tests could not have caught this:** the Filament
+modal is exercised with `Livewire::test()->callAction()`, which never crosses
+the HTTP kernel, so no global middleware runs. Any future test that asserts on
+exact request-body bytes needs to go through the HTTP layer to be meaningful.
+
+### The health poller finally has an invocation mechanism
+
+`App\Jobs\PollHealthChecks` calls `HealthPoller::pollDue()` and re-dispatches
+itself with a 60s delay. `bridge:poll-health` (`App\Console\Commands\PollHealth`)
+kicks off the first one. This is the mechanism `HealthPoller`'s own Phase 2
+docstring specified — a queued job on the existing worker, not a scheduled
+command (needs cron or `schedule:work`, a third process) and not a bespoke loop
+(also a third process).
+
+Three things that must not drift:
+
+- **The re-dispatch lives in `finally`.** There is no cron backstop, so a throw
+  escaping `handle()` is not a degraded pass, it is a permanent outage.
+  `H2-reschedule-only-on-throw` and `H1-poller-stops-rescheduling` are both
+  killed.
+- **It stays on the default queue, and so does `DeployApp`.** Phase 7's
+  supervisord runs one `queue:work` with no `--queue` flag, which consumes
+  `default` only. Naming a queue here would mean all health polling silently
+  never runs while every test stayed green — which is exactly what mutation
+  `H3-poller-on-named-queue` demonstrated by surviving the first QC pass.
+  `test_handle_reschedules_itself_onto_the_default_queue` closes it.
+- **`QUEUE_CONNECTION` is `sync` in `phpunit.xml`, so this job must never be
+  really dispatched in a test** — `delay()` is ignored under `sync` and the
+  self-re-dispatch recurses without bound. Every test calls
+  `app()->call([new PollHealthChecks, 'handle'])` under `Bus::fake()`.
+
+One ordering consequence for Phase 7: a single worker means a long deploy
+blocks the health tick for its full duration. Not a bug — `HealthCheck` rows
+are additive, so the poller catches up on the next tick — but it is real.
+
+### Verified by mutation
+
+**68 mutations across two rounds**, one at a time, full suite per mutation,
+restore verified by hash with the restore wired to a signal handler as well as
+`finally`. **62 killed on first application, 6 survived**, of which four were
+genuine coverage gaps (now killed by four added tests) and two are equivalent
+mutants.
+
+Round 1 — 44 mutations, 41 killed. Survivors:
+
+- **`M2-length-only-token-compare`** — *missing test*, covered above.
+- **`H3-poller-on-named-queue`** — *missing test*, covered above.
+- **`W9-hash-equals-to-strict-compare`** — *equivalent mutant*, covered above.
+
+Round 2 — 24 mutations aimed where round 1 had not looked (route-level
+middleware, the OpenAPI document, resolver precedence, cross-endpoint
+consistency). 21 killed. Survivors:
+
+- **`V1-webhook-hardcoded-branch`** — *missing test*, and the most valuable
+  find of the phase. Replacing `$pushedBranch !== $app->branch` with a
+  hardcoded `!== 'main'` left the entire suite green, because every webhook
+  test used an app tracking `main`. Any app on another branch would have
+  ignored its own pushes and deployed on someone else's.
+  `test_branch_comparison_uses_the_apps_own_branch_not_a_hardcoded_main` uses
+  an app tracking `develop` and asserts both directions.
+  **This is the same failure shape as Phase 3's `commit_sha`/`commit_message`
+  swap**: a fixture whose values coincide cannot distinguish "reads the right
+  field" from "reads a constant that happens to match."
+- **`K3-api-deploy-injects-rollback-sha`** — *missing test*. `queue($app,
+  'deadbeef')` on the API deploy endpoint survived: nothing asserted that a
+  plain deploy leaves `rollback_sha` null, so a plain deploy silently becoming
+  a rollback to an arbitrary commit was invisible. `ParityRoutesTest`'s deploy
+  case already had the assertion; `ApiDeployTest`'s did not, which is exactly
+  why the mutation survived on one endpoint and would have died on the other.
+  **When two endpoints share an enqueue path, assert the same invariants on
+  both** — the shared implementation is what makes it tempting not to.
+- **`G3-apps-status-enum-not-value`** — *equivalent mutant*. Dropping `->value`
+  from `'status' => $app->status->value` changes nothing observable: PHP backed
+  enums are `JsonSerializable` to their value, verified directly
+  (`json_encode(['status' => S::Idle])` is byte-identical to
+  `json_encode(['status' => S::Idle->value])`). Kept anyway — it is an explicit
+  projection rather than a redundant guard, and the exact-JSON assertions
+  already pin the behaviour. Not deleted as dead code, because unlike Phase 4's
+  two cases this line is not a guard that never fires.
+
+The harness is worth rebuilding for Phase 6 rather than reinventing: a JSON
+list of `{id, file, find, replace}`, an exactly-once match check that refuses
+to apply an ambiguous mutation, and a hash-verified restore. The
+match-count check earned its keep — an ambiguous `find` silently mutating the
+wrong occurrence is a false "killed".
+
+**Run the harness from the main session, not a subagent.** The Phase 5 QC
+subagent stalled out (no progress for 600s) having spent its context just
+reading the diff, without applying a single mutation. Driving the script
+directly worked first time; 68 mutations at ~10s per suite is about 12 minutes
+of wall clock.
+
+### The `bridge-mcp` consumer check, run for real
+
+Plan verification item #5 — "point `bridge-mcp/` at the Laravel API and confirm
+its five tools still work" — **has now actually been run**, not just reasoned
+about. All five client calls pass against a live server, driving the real
+`bridge_mcp.client` module rather than a reimplementation of its requests.
+
+How to reproduce it (worth keeping — Phase 7 will want it again):
+
+- Temp SQLite file, `php artisan migrate`, seed one app and one deployment.
+- **Do not use `php artisan serve`.** It forwards only a fixed allowlist of env
+  vars to its child process (`APP_ENV`, `XDEBUG_*`, and a few more), so
+  `DB_DATABASE` is silently dropped and the server reads the real dev database
+  instead. This cost a full debug cycle. Use
+  `php -S 127.0.0.1:8765 -t public public/index.php` with the env inline.
+- Leave `BRIDGE_API_TOKEN` empty and seed the `api_token` settings row instead
+   — that exercises the settings fallback layer, which is how operators
+  actually configure it.
+- `QUEUE_CONNECTION=database` with no worker running: a deploy call writes its
+  job row and returns 202 without executing a real `git clone`. Confirmed
+  afterwards — two queued jobs, deployments left `pending`, nothing ran.
+
+What it proved beyond the five calls: the incremental-tail polling pattern
+Phase 6 depends on (pass the previous `X-Log-Offset` back, get an empty slice
+and an unchanged offset), that `X-Log-Offset` is the full log length rather
+than the slice's when reading from a mid-log offset, and that 404 and 401 both
+surface as `BridgeApiError` reading the `error` key. The initial misconfigured
+run incidentally proved the 503 path too: it raised `BridgeApiConfigError`,
+the distinct type the client reserves for an unconfigured token.
+
+### Parity acceptance for this phase
+
+All **21** reference cases across `apiDeploy`, `apiOpenapi`, `webhooks`,
+`containerStatus`, `envEditor` and `rollback` map to ported tests, with 89
+additional cases beyond them (auth ladders on every route, non-numeric ids,
+offset edges, the cross-app rollback boundary).
+
+Two reference behaviours deliberately not carried: the rollback/deploy
+redirects (now 202 JSON, see above) and `/branches`'s `repo_url` being marked
+`required: true` in the OpenAPI spec while the endpoint explicitly handles its
+absence — the spec was wrong and is now `required: false`, pinned by
+`test_openapi_json_marks_branches_repo_url_parameter_as_optional`.
+
+### Corrections to earlier notes
+
+- The Phase 1 note that "the API and webhook app-creation endpoints bypass the
+  form and need their own explicit `catch` for the `apps.path` constraint
+  violation" (see the `apps.path` bullet in Phase 1) **describes endpoints that
+  do not exist**. `reference/src/routes/api.ts` has no app-creation route and
+  neither does the webhook; the only way to create an app is the Filament form.
+  Nothing was built for it and nothing needs to be.
+
+### For Phase 6 (log viewer) and Phase 7 (packaging)
+
+- **Log offsets are BYTES** (`strlen`/`substr`), not UTF-16 code units. Phase 1
+  flagged this as a unit Phase 5 had to pick and be internally consistent
+  about; this is that decision. `X-Log-Offset` is the **full** log length, not
+  the returned slice's — that is what makes incremental polling work, and
+  `D1-log-offset-is-slice-length` is killed.
+- `X-Deploy-Done` is the literal string `"true"`/`"false"`, not a JSON boolean.
+  `bridge-mcp` compares against the string.
+- **There is no throttle on `/api/*`.** Laravel only adds `throttle:` to the
+  `api` group when `$middleware->throttleApi()` is called, and it is not.
+  Deliberate: the default is 60/min and Phase 6's `wire:poll.1s` log viewer is
+  exactly 60/min, so it would start 429ing under any jitter. Do not add
+  `throttleApi()` without giving the log endpoint its own much higher limit.
+- **`bridge:poll-health` has no duplicate-kickoff guard.** Two invocations mean
+  two chains ticking forever. A lease-renewed lock spanning an indefinite job
+  chain would, when stale, block the only manual recovery path, so it is an
+  entrypoint obligation instead: **Phase 7 must invoke it exactly once per
+  container start**, the same guarantee the entrypoint already owes migrations
+  and `bridge:reset-stuck-deployments`. Worst case of a double kickoff is
+  doubled request volume and duplicate `HealthCheck` rows — additive, not
+  corrupting.
+- `tests/Feature/ParityRoutesTest::test_env_get_returns_500_when_the_file_cannot_be_read`
+  uses `chmod(0000)` and **self-skips as root**. It runs locally; in a
+  root-running CI container it would silently skip. Verified running here.
+- The pre-existing `vendor/bin/pint --test` failure on `bootstrap/providers.php`
+  is untouched by this phase and still there.
 
 ## Parity acceptance
 

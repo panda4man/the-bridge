@@ -4,7 +4,6 @@ namespace App\Filament\Actions;
 
 use App\Enums\DeploymentStatus;
 use App\Filament\Resources\Deployments\DeploymentResource;
-use App\Jobs\DeployApp;
 use App\Models\Deployment;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -59,13 +58,14 @@ final class RollbackAction
                     return null;
                 }
 
-                $rollback = Deployment::create([
-                    'app_id' => $record->app_id,
-                    'status' => DeploymentStatus::Pending,
-                    'rollback_sha' => $record->commit_sha,
-                ]);
-
-                DeployApp::dispatch($rollback->id);
+                // Delegates row-creation + dispatch to DeployAction::queue()
+                // — the single shared enqueue path (see that class's
+                // docblock) — rather than duplicating it here. $record->app
+                // is the SOURCE deployment's own app relation, which is what
+                // makes guard #1 in this class's docblock ("no second app id
+                // to disagree with") true: there is structurally only one
+                // app in play.
+                $rollback = DeployAction::queue($record->app, $record->commit_sha);
 
                 return redirect(DeploymentResource::getUrl('view', ['record' => $rollback]));
             });
