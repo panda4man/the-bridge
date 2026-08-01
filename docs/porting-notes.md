@@ -2020,6 +2020,22 @@ absence — the spec was wrong and is now `required: false`, pinned by
   and `bridge:reset-stuck-deployments`. Worst case of a double kickoff is
   doubled request volume and duplicate `HealthCheck` rows — additive, not
   corrupting.
+- **The Docker socket is NOT at `/var/run/docker.sock` on this machine.** Docker
+  Desktop on macOS puts it at `~/.docker/run/docker.sock`
+  (`docker context inspect --format '{{.Endpoints.docker.Host}}'` confirms).
+  The plan's Phase 7 volume mount assumes the Linux path. Read the context
+  rather than hardcoding, or the socket mount silently binds a non-existent
+  path and every Docker call fails on a host that looks fine. Verified
+  2026-08-01 with Docker 29.6.2 / Compose v5.3.1.
+- **A live deploy target already exists** at
+  `/Users/aclinton/Dev/Personal/Docker/bridge-test-app` — real git repo on
+  `main`, `nginx:alpine` compose on port 8099, static page for `health_url`,
+  and a `bridge.yml` post-deploy step deliberately spread over ~5 seconds so
+  incremental log polling is observable instead of arriving in one burst.
+  Verified end to end (clone, pull, up, HTTP 200, `exec -T` post-deploy,
+  teardown); `nginx:alpine` is pre-pulled. Point an App row at it with
+  `repo_url` set to that path, run a real `queue:work` (the app's
+  `QUEUE_CONNECTION` is `database`, not `sync`), and deploy.
 - `tests/Feature/ParityRoutesTest::test_env_get_returns_500_when_the_file_cannot_be_read`
   uses `chmod(0000)` and **self-skips as root**. It runs locally; in a
   root-running CI container it would silently skip. Verified running here.
