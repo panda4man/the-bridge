@@ -37,6 +37,14 @@ final class FakeProcessRunner implements ProcessRunner
     private array $queue = [];
 
     /**
+     * Set by answerByArgv(). When present it takes over from the queue
+     * entirely — see that method for when and why.
+     *
+     * @var (callable(list<string>, ?string, array<string, string>): ?ProcessResult)|null
+     */
+    private $responder = null;
+
+    /**
      * @var list<array{
      *     command: list<string>,
      *     cwd: ?string,
@@ -99,6 +107,34 @@ final class FakeProcessRunner implements ProcessRunner
         return $this;
     }
 
+    /**
+     * Switch the fake from an ordered QUEUE to an argv-addressed RESPONDER.
+     *
+     * The queue assumes a test knows exactly how many processes will be spawned
+     * and in what order. That holds for a job (Phase 3) and does not hold for a
+     * Livewire component (Phase 4): a form that lists a repo's branches
+     * re-renders — and so re-runs `git ls-remote` — an implementation-defined
+     * number of times per interaction, and interleaves that with the `git
+     * clone` the submit handler runs. Pinning those counts would pin Filament's
+     * render behaviour, not this app's.
+     *
+     * Strictness is preserved rather than traded away: the responder is given
+     * the argv and MUST return a ProcessResult for it. Returning null means
+     * "I did not expect this command", which throws — the same failure the
+     * exhausted queue gives, addressed by argv instead of by position.
+     *
+     * Mutually exclusive with the queue. Setting a responder clears it.
+     *
+     * @param  callable(list<string> $command, ?string $cwd, array<string, string> $env): ?ProcessResult  $responder
+     */
+    public function answerByArgv(callable $responder): static
+    {
+        $this->queue = [];
+        $this->responder = $responder;
+
+        return $this;
+    }
+
     public function run(
         array $command,
         ?string $cwd = null,
@@ -114,6 +150,29 @@ final class FakeProcessRunner implements ProcessRunner
             'timeout' => $timeout,
             'idleTimeout' => $idleTimeout,
         ];
+
+        if ($this->responder !== null) {
+            $answer = ($this->responder)($command, $cwd, $env);
+
+            if (! $answer instanceof ProcessResult) {
+                throw new LogicException(
+                    'FakeProcessRunner: the argv responder did not answer: '
+                    .implode(' ', $command)
+                    .'. Return a ProcessResult for every command the code under test can issue.'
+                );
+            }
+
+            if ($onOutput !== null) {
+                if ($answer->output !== '') {
+                    $onOutput('out', $answer->output);
+                }
+                if ($answer->errorOutput !== '') {
+                    $onOutput('err', $answer->errorOutput);
+                }
+            }
+
+            return $answer;
+        }
 
         if ($this->queue === []) {
             // Deliberately strict. This used to fall back to a silent

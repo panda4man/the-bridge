@@ -46,6 +46,28 @@ class Deployment extends Model
     }
 
     /**
+     * Elapsed wall-clock time as the UI and Slack both render it: `1m 05s`
+     * past a minute, `42s` under one. Null until the deployment has both a
+     * start and an end.
+     *
+     * Ported from reference/src/services/slackNotifier.ts:30-36 and shared
+     * with it deliberately — Phase 4's deployments table shows the same value
+     * in the same format, and two copies of a format string is how they drift.
+     */
+    public function durationText(): ?string
+    {
+        if (! $this->started_at || ! $this->finished_at) {
+            return null;
+        }
+
+        $seconds = (int) round($this->finished_at->getTimestamp() - $this->started_at->getTimestamp());
+
+        return $seconds >= 60
+            ? sprintf('%dm %ds', intdiv($seconds, 60), $seconds % 60)
+            : "{$seconds}s";
+    }
+
+    /**
      * Find the most recent successful deployment for an app that predates
      * $beforeId and has a known commit SHA.
      *

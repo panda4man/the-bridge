@@ -1483,6 +1483,235 @@ deliberately committed rows). No test currently depends on ids starting at 1.
   the unbounded in-memory log buffering Phase 2 flagged as a real risk for a
   long, verbose build — the callback is the only sanctioned path.
 
+## Phase 4 — the Filament panel
+
+`php artisan test` — **283 tests, 804 assertions, all green**, in fixed order
+and under random-order seeds 1, 4242 and 31337. Measured breakdown of the 72
+added this phase:
+
+| | tests |
+|---|---|
+| `tests/Unit/Services/AppProvisionerTest` | 22 |
+| `tests/Feature/Filament/CreateAppTest` | 11 |
+| `tests/Feature/Filament/SettingsPageTest` | 11 |
+| `tests/Feature/Filament/AppActionsTest` | 10 |
+| `tests/Feature/Filament/EditAppTest` | 8 |
+| `tests/Feature/Filament/DeploymentResourceTest` | 8 |
+| `tests/Feature/Filament/PanelSmokeTest` | 2 |
+
+**Filament is v5.7.4, on Laravel 13.23 / PHP 8.4.** The plan's snippets are
+v3-shaped and do not apply. What actually changed: forms, infolists and the
+custom page's schema are all `Filament\Schemas\Schema`; every action type
+(page header, table row, bulk) lives under `Filament\Actions\`; resources are
+generated into a per-model directory with `Schemas/`, `Tables/` and `Pages/`
+subdirectories. `php artisan make:filament-resource` was used to scaffold and
+the generated shape then rewritten — that is the reliable way to read the
+installed API rather than guessing at it.
+
+### URL parity: the apps list owns `/`, not a Dashboard
+
+The reference serves the app list at `GET /`, and
+`reference/tests/Feature/appCrud.test.ts` asserts a 200 with the list. Filament
+puts a Dashboard there by default.
+
+Resolved by giving `AppResource` an **empty slug** (`protected static ?string
+$slug = '/'`) with its non-index pages routed explicitly under `/apps`:
+
+```
+GET /                    apps index
+GET /apps/create         create
+GET /apps/{record}       view
+GET /apps/{record}/edit  edit
+GET /deployments         deployments index
+GET /deployments/{record} deployment view
+GET /settings            settings
+```
+
+— byte-identical to the Express app's shape, so bookmarks and the documented
+webhook URL keep working. Two consequences to know:
+
+- **`Dashboard::class` is deliberately unregistered** in `AdminPanelProvider`,
+  along with the two default dashboard widgets. Registering it puts a second
+  page on `/` and shadows the app list. `->pages([])` and `->widgets([])` are
+  intentional, not leftovers.
+- The generated route names carry a **doubled dot**
+  (`filament.admin.resources..index`). Harmless — nothing resolves these by
+  literal name — but do not "tidy" the slug without re-checking every URL
+  above.
+
+### The lifecycle side effects live in `App\Services\AppProvisioner`
+
+Create, update and delete are not CRUD, and the parts that are not CRUD are in
+a service rather than inline in the pages: the create page and BOTH delete
+actions (edit-page header and apps-table row) are separate callers of the same
+rules, and every message is a parity contract that needs pinning without
+standing up a Livewire component.
+
+- **Create** — `CreateApp::handleRecordCreation()` resolves the relative path
+  segment to an absolute one, runs `provision()` (clone unless importing, then
+  seed `.env`), and only then writes the row. Order matters: mutation
+  `C3-creates-row-before-provisioning` — creating the row first — is killed by
+  four tests, because a failed clone would otherwise leave an app row whose
+  checkout does not exist.
+- **Clone failure is a form error, not a 500.** `provision()` throws
+  `App\Exceptions\CloneFailed` whose message is ALREADY the user-facing
+  `Clone failed: …` string, and the page converts it to a
+  `ValidationException` on `data.repo_url`. The dedicated exception type
+  exists so a clone failure is distinguishable from any other
+  `RuntimeException` escaping provisioning, which should stay a real error.
+- **Delete** — `destroy()` runs `docker compose down` and then removes the
+  directory, both **before** the row goes. Every step is best-effort and
+  nothing may throw: losing the DB row while the containers keep running is
+  the worse failure. The 60s bound is a **wall-clock** `timeout:`, not the
+  idle timeout `DeployApp` uses — `docker compose down` printing something
+  every 59 seconds forever must still be killed, unlike a legitimately long
+  build. Mutating it to `idleTimeout:` is killed.
+- **No `DeleteBulkAction` on the apps table.** Bulk delete would run an
+  unbounded series of `docker compose down` calls, each with its own 60s
+  ceiling, inside one web request.
+
+### `path` means two different things, by operation
+
+The reference has two forms with two rule sets, and this port has one schema
+serving both:
+
+- **create** — a RELATIVE segment, prefixed with `BRIDGE_REPOS_PATH`, max 255,
+  subject to the directory-state rules;
+- **edit** — the FULL stored path, max 500, no directory-state rules (the
+  checkout exists; the operator may be repointing it).
+
+The `..` traversal rule is **unconditional**, unlike the reference, which
+checks it on create but not update (`appValidators.ts:87`) — one of the
+plan's "fix, do not carry forward" defects. Mutation
+`F2-traversal-rule-create-only` restores the reference's behaviour and is
+killed by `test_a_parent_directory_traversal_is_rejected_on_update_too`.
+
+`health_url` and the deploy-steps textarea are **edit-only**, matching the
+reference: its create route reads only name/repo_url/branch/path off the
+request and its `create.ejs` has neither field.
+
+### The branch field is a Select that degrades to free text
+
+Filament's `Select` has no custom-value affordance, and a private repo with no
+key configured — or simply an offline host — must not lock the operator out of
+the form. So `branch` is **two mutually exclusive components on the same state
+path**: a `Select` when `GitService::lsRemote()` returns anything, a
+`TextInput` when it returns nothing. A hidden Filament component is not
+dehydrated (`isHiddenAndNotDehydratedWhenHidden()`), so exactly one ever
+writes.
+
+`AppForm::branches()` swallows every lsRemote failure and returns `[]`. That
+empty result is the signal the fallback keys off, so the swallow is
+load-bearing rather than defensive noise. Results are memoised per repo URL
+for the request — `options()` and both `visible()` predicates ask the same
+question on the same render, and `git ls-remote` is a network call.
+`AppForm::forgetBranchCache()` is the test seam for that memo.
+
+### Two extractions, one for sharing and one for correctness
+
+- **`Deployment::durationText()`** — the `1m 05s` / `42s` formatting moved out
+  of `SlackNotifier` so the deployments table and the Slack payload cannot
+  drift. `SlackNotifierTest`'s 17 cases stayed green across the move, which is
+  the evidence the extraction was faithful.
+- **`SlackNotifier::sendTest()`** — unlike `notify()`, this one **throws** on
+  failure. The reference swallows the error and then reports it through its
+  SUCCESS flash channel (`settings.ts:31-33`); the plan lists that as a defect
+  to fix. The Settings page turns the exception into a **danger**
+  notification. Mutation `S1-failure-reported-as-success` restores the
+  reference's behaviour and is killed by two tests.
+  - The danger notification deliberately carries **no `->body($e->getMessage())`**.
+    An HTTP `RequestException`'s message embeds the request URL and response
+    body, which for this button means rendering the Slack webhook URL — a
+    credential — into a toast.
+
+### Rollback: which of the reference's three guards survived, and why
+
+`reference/src/routes/apps.ts:195-211` has three. In the panel the action is
+bound to a `Deployment` record, which changes what each one means:
+
+1. `source.app_id !== app.id` → 404. **Structurally impossible here** — the
+   app is read off the source deployment, so there is no second id to
+   disagree with. Phase 5's `POST /apps/:id/rollback` DOES take both ids and
+   **must keep this check**; it is a real authorisation boundary there.
+   `test_rollback_targets_the_app_the_source_deployment_belongs_to` pins that
+   the app comes from the source rather than from, say, the first app in the
+   table.
+2. `!source.commit_sha` → 400. Kept, as both a visibility rule and a refusal
+   inside the action — hiding is presentation, and a stale page could still
+   submit against a row whose SHA has since been cleared.
+3. Successful deployments only. A visibility rule, matching the reference,
+   whose route does not enforce it either — only its view renders the button
+   on successful rows.
+
+### `FakeProcessRunner` gained an argv-addressed mode
+
+`answerByArgv()` switches the fake from an ordered QUEUE to a responder keyed
+on the command. The queue assumes a test knows exactly how many processes will
+be spawned and in what order; that holds for a job and does **not** hold for a
+Livewire component, where a form listing a repo's branches re-runs
+`git ls-remote` an implementation-defined number of times per interaction and
+interleaves that with the `git clone` the submit handler runs. Pinning those
+counts would pin Filament's render behaviour, not this app's.
+
+Strictness is preserved rather than traded away: the responder is handed the
+argv and MUST return a `ProcessResult` for it; returning null throws, exactly
+like the exhausted queue does. **Use the queue for jobs and services, the
+responder for Livewire components.**
+
+### Verified by mutation
+
+40 mutations, one at a time, full suite per mutation, restore verified by
+hash. **All 40 killed.** Two survived the first pass and both turned out to be
+**dead defensive code**, now removed rather than papered over with a test:
+
+- **`health_url`'s `?: null` coercion in `handleRecordUpdate()`.** Filament
+  already dehydrates a blank `TextInput` to NULL — confirmed by direct probe,
+  not just by the surviving mutation. The behaviour still matters (an empty
+  string is a URL the health poller would dutifully poll) and is now pinned
+  through the mechanism that actually implements it: mutation
+  `E5b-blank-health-url-dehydrates-as-empty-string` forces a blank to
+  dehydrate as `''` and is killed.
+- **`trim()` in `Settings::save()`.** The field's own `->trim()` had already
+  run. Note the ordering there: `->trim()` must come **before** `->url()`, or
+  a URL pasted with a trailing newline is rejected as malformed instead of
+  being cleaned up. Mutation `S2b-field-loses-trim` is killed.
+
+Both cases are the same lesson as Phase 3's round-2 findings: a mutation
+surviving is not automatically a missing test — it can be code that never had
+an effect.
+
+Killed and worth recording:
+
+- `P1-swap-skipclone-branches` and `P2-swap-import-messages` — the import and
+  clone branches enforce **opposite** rules ("must exist" vs "must not"), so
+  their messages must not be interchangeable.
+- `P5-env-seed-overwrites` — dropping the `! exists($env)` guard, i.e.
+  clobbering an operator's real `.env` with `.env.example`.
+- `P7`/`P9` — leaving the checkout on disk, and letting a `docker` failure
+  escape `destroy()`.
+- `A5-webhook-secret-halves-in-width` — 16 random bytes instead of 32. The
+  width is the HMAC key strength Phase 5's signature check depends on.
+- `A6-env-editor-accepts-empty-content` — the `.env` editor's empty-content
+  refusal, which is only worth anything because the file survives it.
+- `D1-short-sha-is-eight-chars` and `D2-duration-minute-boundary-off-by-one`
+  — the two presentation contracts that are actually contracts.
+
+### For Phase 5 (API/webhook) and Phase 6 (log viewer)
+
+- **`DeploymentInfolist`'s Log section is a placeholder.** It renders the
+  stored `log` as-is, which is correct for a finished deployment and merely
+  stale for a running one. Phase 6 replaces that entry with the polling
+  Livewire component; the `.lcars-log` class is already on it.
+- **`POST /apps/{id}/rollback` must re-add the cross-app 404** — see the
+  Rollback section above. It is the one guard the panel does not need and the
+  API does.
+- **`DeployAction::queue(App $app): Deployment`** is public and is the single
+  place a deploy is enqueued from the UI. Phase 5's API deploy endpoint and
+  the webhook should call it rather than re-creating the row and dispatching
+  by hand, so "create pending row, then dispatch its id" stays in one place.
+- **Nothing in this phase registered a route in `routes/web.php`.** That file
+  is still empty of routes and its precedence warnings still apply verbatim.
+
 ## Parity acceptance
 
 `reference/tests/` and `reference/src/services/*.test.ts` hold **115 cases**.

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
 use App\Models\Setting;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -22,6 +24,29 @@ final class SlackNotifier
 {
     private const LOG_TAIL_LINES = 20;
 
+    /**
+     * Verbatim from reference/src/routes/settings.ts:29, em dash included.
+     */
+    public const TEST_MESSAGE = ':satellite: The Bridge test notification — connection OK.';
+
+    /**
+     * Send the Settings screen's "test notification".
+     *
+     * Unlike notify(), this one THROWS on failure — the operator pressed a
+     * button whose entire purpose is to tell them whether the URL works, so
+     * swallowing the error is the one thing it must not do. The reference
+     * swallows it and then reports the failure through its success flash
+     * channel (settings.ts:31-33), which the plan lists as a defect to fix
+     * rather than carry forward; the caller turns this exception into a
+     * danger notification.
+     *
+     * @throws RequestException|ConnectionException
+     */
+    public static function sendTest(string $url): void
+    {
+        Http::post($url, ['text' => self::TEST_MESSAGE])->throw();
+    }
+
     public static function notify(Deployment $deployment): void
     {
         $url = Setting::getValue('slack_webhook_url');
@@ -37,13 +62,10 @@ final class SlackNotifier
             ? $deployment->status->value
             : (string) $deployment->status;
 
-        $durationText = '';
-        if ($deployment->started_at && $deployment->finished_at) {
-            $secs = (int) round($deployment->finished_at->getTimestamp() - $deployment->started_at->getTimestamp());
-            $durationText = $secs >= 60
-                ? sprintf('%dm %ds', intdiv($secs, 60), $secs % 60)
-                : "{$secs}s";
-        }
+        // Shared with Phase 4's deployments table — see
+        // Deployment::durationText(), which is where this formatting moved so
+        // the two renderings cannot drift apart.
+        $durationText = $deployment->durationText() ?? '';
 
         $logTail = $deployment->log
             ? trim(implode("\n", array_slice(explode("\n", $deployment->log), -self::LOG_TAIL_LINES)))
