@@ -125,6 +125,32 @@ class Deployment extends Model
     }
 
     /**
+     * The length of the stored log in BYTES.
+     *
+     * This is the unit the whole port uses for log offsets — PHP's strlen()
+     * and substr() are byte-oriented, where the reference's offsets were
+     * UTF-16 code units (JS string indexing). docs/porting-notes.md (Phase 1)
+     * flags picking one and being internally consistent; this pair of methods
+     * is where that consistency lives, so the API's `log_length`/`X-Log-Offset`
+     * and the log viewer's polling offset cannot drift onto different units.
+     */
+    public function logLength(): int
+    {
+        return strlen($this->log ?? '');
+    }
+
+    /**
+     * The log from $offset to the end, in the same byte unit as logLength().
+     *
+     * A negative offset clamps to 0 rather than counting back from the end,
+     * which is what PHP's own substr() would do with one.
+     */
+    public function logSlice(int $offset): string
+    {
+        return substr($this->log ?? '', max(0, $offset));
+    }
+
+    /**
      * Ported byte-for-byte from reference/src/models/deployment.ts stripAnsi().
      */
     public static function stripAnsi(string $text): string

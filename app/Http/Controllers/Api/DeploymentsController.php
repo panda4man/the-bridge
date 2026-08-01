@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\DeploymentStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Deployment;
 use Illuminate\Http\JsonResponse;
@@ -15,9 +14,6 @@ use Illuminate\Http\Response;
  */
 class DeploymentsController extends Controller
 {
-    /** @var list<DeploymentStatus> */
-    private const array TERMINAL = [DeploymentStatus::Success, DeploymentStatus::Failed];
-
     /**
      * $id is a string route parameter, not int-typed — see
      * AppsController::deploy()'s docblock for why.
@@ -42,7 +38,7 @@ class DeploymentsController extends Controller
             'commit_message' => $deployment->commit_message,
             'started_at' => $deployment->started_at,
             'finished_at' => $deployment->finished_at,
-            'log_length' => strlen($deployment->log ?? ''),
+            'log_length' => $deployment->logLength(),
         ]);
     }
 
@@ -53,6 +49,11 @@ class DeploymentsController extends Controller
      * this as a unit this port must pick and be internally consistent
      * about, not necessarily match the reference's UTF-16 code units — this
      * is that decision.
+     *
+     * The slicing itself lives on the model (logSlice()/logLength()) because
+     * Phase 6's log viewer polls over Livewire rather than over this route —
+     * it cannot send a bearer token from a panel session — and the two must
+     * hand out identical offsets. See App\Livewire\DeploymentLog.
      */
     public function log(Request $request, string $id): JsonResponse|Response
     {
@@ -62,15 +63,13 @@ class DeploymentsController extends Controller
             return response()->json(['error' => 'Not found'], 404);
         }
 
-        $log = $deployment->log ?? '';
-        $offset = max(0, (int) $request->query('offset', '0'));
-        $chunk = substr($log, $offset);
+        $chunk = $deployment->logSlice((int) $request->query('offset', '0'));
 
         return response($chunk, 200, [
             'Content-Type' => 'text/plain; charset=utf-8',
-            'X-Log-Offset' => (string) strlen($log),
+            'X-Log-Offset' => (string) $deployment->logLength(),
             'X-Deploy-Status' => $deployment->status->value,
-            'X-Deploy-Done' => in_array($deployment->status, self::TERMINAL, true) ? 'true' : 'false',
+            'X-Deploy-Done' => $deployment->status->isTerminal() ? 'true' : 'false',
         ]);
     }
 }

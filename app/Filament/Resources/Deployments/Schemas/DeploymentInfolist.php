@@ -2,19 +2,21 @@
 
 namespace App\Filament\Resources\Deployments\Schemas;
 
+use App\Livewire\DeploymentLog;
 use App\Models\Deployment;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Livewire;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
 /**
  * The deployment detail view.
  *
- * The live log itself is NOT here — Phase 6 replaces the placeholder entry
- * below with a polling Livewire component (`wire:poll.1s` against the log
- * endpoint Phase 5 adds, advancing an offset from `X-Log-Offset`). Until then
- * this renders the stored log as-is, which is correct for any deployment that
- * has already finished and merely stale for one still running.
+ * The log section is App\Livewire\DeploymentLog, which polls and appends
+ * incrementally; it is not a TextEntry over the `log` column, because that
+ * renders the log as it stood when the page loaded and never moves again.
+ * Filament passes the record to it automatically
+ * (Filament\Schemas\Components\Livewire::getComponentProperties()).
  */
 class DeploymentInfolist
 {
@@ -62,10 +64,7 @@ class DeploymentInfolist
 
                 Section::make('Log')
                     ->schema([
-                        TextEntry::make('log')
-                            ->hiddenLabel()
-                            ->placeholder('No output yet.')
-                            ->extraAttributes(['class' => 'lcars-log'])
+                        Livewire::make(DeploymentLog::class)
                             ->columnSpanFull(),
                     ]),
             ]);

@@ -2042,11 +2042,276 @@ absence — the spec was wrong and is now `required: false`, pinned by
 - The pre-existing `vendor/bin/pint --test` failure on `bootstrap/providers.php`
   is untouched by this phase and still there.
 
+## Phase 6 — deploy log viewer
+
+`php artisan test` — **421 tests, 1149 assertions, all green**, in fixed order
+and under random-order seeds 1, 4242 and 31337. 28 added this phase:
+`tests/Feature/Filament/DeploymentLogTest` (18) and
+`tests/Feature/Filament/ResetDeploymentTest` (10). `vendor/bin/pint --test`
+still fails only on the pre-existing `bootstrap/providers.php`.
+
+Livewire is **v4.3.4** here (Filament 5.7.4 requires `^4.1`), not the v3 most
+snippets assume. Everything below was read out of `vendor/livewire/livewire/`
+rather than recalled.
+
+### The viewer does not call the log endpoint, and could not
+
+Phase 5's note said Phase 6 "polls it at `wire:poll.1s`", and the comment at the
+top of `routes/api.php` still argues against `throttleApi()` on that basis. The
+premise is wrong, and the conclusion happens to survive anyway:
+
+`GET /api/deployments/{id}/log` is behind `api.token`. A panel session has no
+bearer token to hand JavaScript, so a browser `fetch()` to that route is a 401.
+`App\Livewire\DeploymentLog` reads the database directly instead, and
+`wire:poll` targets `/livewire/update`, not `/api/*`.
+
+What keeps the two paths honest is a shared pair of model methods —
+`Deployment::logLength()` and `Deployment::logSlice()` — which the controller
+now uses too. Offsets mean the same bytes on both, which is what Phase 1's
+"pick one unit" note actually asked for.
+
+**The `throttleApi()` warning still stands**, for a different reason: nothing
+polls `/api/*` from this app, so a limiter there would only ever throttle
+`bridge-mcp` and other external consumers, silently. Leave it off.
+
+### Three things the component does that are not obvious
+
+- **The log is never component state.** Every public Livewire property is
+  serialised into the snapshot and sent BACK to the server on each poll; a
+  public `$log` would ship a multi-megabyte build log over the wire twice a
+  second. Only `$offset`, `$status` and `$done` are public. New output is
+  dispatched as a browser event (`deployment-log-appended`) and appended by
+  Alpine.
+- **`wire:ignore` on the `<pre>` is load-bearing.** It hands the box's contents
+  to the browser permanently. Without it the next morph replaces the box with
+  what the server last rendered — the log as it stood at MOUNT — silently
+  discarding every appended chunk. Nothing in PHPUnit can catch its removal;
+  see "What the suite cannot cover" below.
+- **Polling stops by dropping the attribute.** `wire-poll.js` pauses when
+  `wire:poll` is no longer on the element (`theDirectiveIsOffTheElement`), so
+  the view renders it only while `$done` is false. There is no JS stop API to
+  call. Verified in the browser, not just in the rendered HTML: zero
+  `/livewire/update` requests in the 4 seconds after a deploy finished.
+
+`poll()` reads the chunk **before** it sets `$done`. Getting that order wrong
+truncates the log permanently at the second-to-last poll, because nothing polls
+again to pick up what the worker wrote alongside the final status —
+`test_the_last_chunk_is_delivered_by_the_same_poll_that_stops_polling` pins it
+and mutation `M5` is killed by exactly that one test.
+
+### The rest of the page had to learn to move too
+
+Only the log box updates on its own; the infolist's status badge, duration and
+`finished_at`, and which header actions are offered, are all rendered once at
+page load. So `DeploymentLog::poll()` dispatches `deployment-status-changed` on
+any status transition (not only on completion — `pending` → `running` matters
+just as much), and `ViewDeployment` listens with `#[On]` and re-renders.
+
+That is what makes the Reset button vanish when a deploy ends, which is the
+reference's `x-show="!done"` (show.ejs:16). The dispatch is deliberately
+conditional: firing every second would re-render the whole page around the log
+for the entire length of a build.
+
+Both halves are pinned, because a rename on either side leaves a live log under
+a permanently stale badge with nothing failing: `assertDispatched` on the
+component, and `SupportEvents::getListenerEventNames()` on the page.
+
+### Reset: `visible()` is the whole fix, and the second guard was removed
+
+The plan lists the reference's unconditional success flash as a defect —
+`reference/src/routes/deployments.ts:68` flashes `Deployment reset to failed.`
+outside its own `if (resetable)` block, so clicking Reset on a deployment that
+finished a moment ago reports a state change that did not happen. On a page
+that polls a live deploy that window is real, not theoretical.
+
+`ResetDeploymentAction` was first written with a belt-and-braces re-read inside
+the action, mirroring `RollbackAction`'s `commit_sha` guard, reporting a warning
+notification on a no-op. **It could not fire, and was removed.** Filament
+evaluates `visible()` against a freshly-loaded record at BOTH `mountAction()`
+and `callMountedAction()` (`Filament\Actions\Concerns\InteractsWithActions:158`
+and `:244` — a hidden action is disabled, and a disabled action unmounts without
+running). Confirmed empirically first, not by reading alone: the test asserting
+that warning failed with `A notification was not sent`. The confirmation modal
+does not open a window either, since the second check happens after it.
+
+Kept instead: a test on the mechanism that actually implements the fix — a
+deployment that finished since the page rendered is neither reset nor reported
+as reset (mutation `M18`, deleting `visible()`, is killed by four tests). Same
+lesson as Phase 4's two removals: a mutation surviving can mean dead code, and
+dead defensive code gets deleted rather than papered over with a test.
+
+**This applies to `RollbackAction` too, and it was left alone.** Its docblock's
+claim that "a stale page could still submit against a row whose SHA has since
+been cleared" is now known to be false — Filament stops that before the closure
+runs. The code is harmless and removing it is outside this phase; **Phase 8's
+final QC should either delete that guard or correct the docblock.**
+
+The cost of having no in-action refusal is that a stale click does nothing
+silently. It is small: the status-changed dispatch above removes the button
+within a second of the deploy ending.
+
+### Verified against a real deploy, which is the phase's exit criterion
+
+Deployed `/Users/aclinton/Dev/Personal/Docker/bridge-test-app` (the target Phase
+5 left ready) through the panel against a real `queue:work`, driving Chrome:
+
+- output appeared incrementally over ~11s, not in one burst at the end;
+- status flipped `running` → `success` with no manual refresh, and Commit,
+  Message, Duration and Finished at filled in with it;
+- the poll attribute left the DOM and `/livewire/update` traffic went to zero;
+- on a long log, the box was already scrolled to the bottom on load
+  (`scrollTop` 3088 of 3688) and stayed pinned as chunks arrived;
+- a chunk containing `→ ünïcode ✓` appended intact with no duplication of
+  earlier content — the byte offsets survive a multibyte boundary in practice,
+  not only in `test_offsets_are_bytes_...`;
+- Reset on a stuck `running` deployment produced `Deployment reset to failed.`,
+  status `failed`, a stamped `finished_at` (duration `20m 37s`), the app back to
+  `failed`, and the button gone;
+- no console errors throughout.
+
+### What the suite cannot cover
+
+Everything above the PHP boundary is browser behaviour, and PHPUnit sees only
+the rendered HTML. Specifically unpinned by tests:
+
+- removing `wire:ignore` (the log box would reset to its mount-time contents on
+  the next morph);
+- `textContent` → `innerHTML` in `append()`, which would execute build output as
+  markup. `test_the_log_is_rendered_as_text_not_html` covers the server-rendered
+  half only;
+- the auto-scroll and the placeholder-replacement branch in `append()`.
+
+A Dusk suite would close these. Until there is one, **re-run the real-deploy
+check above after touching `resources/views/livewire/deployment-log.blade.php`**
+— it exercises all three in about a minute.
+
+### State at handoff
+
+Phase 6 is complete. Nothing is left half-built, and no Phase 7 work was
+started.
+
+| | |
+|---|---|
+| Branch | `laravel-port`, worktree `../the-bridge-laravel` |
+| Suite | 421 tests / 1149 assertions, green (fixed + seeds 1, 4242, 31337) |
+| Pint | fails only on the pre-existing `bootstrap/providers.php` |
+| Phase 6 changes | **uncommitted** at the time of writing |
+
+Touched by this phase — 5 modified, 5 new:
+
+```
+M app/Enums/DeploymentStatus.php                                  isTerminal/isResettable
+M app/Models/Deployment.php                                       logLength/logSlice
+M app/Http/Controllers/Api/DeploymentsController.php              uses both
+M app/Filament/Resources/Deployments/Schemas/DeploymentInfolist.php   TextEntry → Livewire
+M app/Filament/Resources/Deployments/Pages/ViewDeployment.php     Reset action + #[On]
++ app/Livewire/DeploymentLog.php
++ resources/views/livewire/deployment-log.blade.php
++ app/Filament/Actions/ResetDeploymentAction.php
++ tests/Feature/Filament/DeploymentLogTest.php
++ tests/Feature/Filament/ResetDeploymentTest.php
+```
+
+**The local environment was returned to empty afterwards** — `apps`,
+`deployments` and `health_checks` rows deleted, `repos/bridge-test-app`
+removed, `docker compose down` run. Phase 7 starts from an empty local database
+and must re-provision before it can deploy anything.
+
+### Re-running the manual check (Phase 7 will need this repeatedly)
+
+The exact sequence Phase 6 used, from a clean tree:
+
+```bash
+php artisan migrate --force
+php artisan tinker --execute='
+$p = app(App\Services\AppProvisioner::class);
+$full = App\Services\AppProvisioner::fullPath("bridge-test-app");
+$p->provision($full, "/Users/aclinton/Dev/Personal/Docker/bridge-test-app", "main", false);
+App\Models\App::create(["name"=>"Bridge Test App","repo_url"=>"/Users/aclinton/Dev/Personal/Docker/bridge-test-app","branch"=>"main","path"=>$full,"health_url"=>"http://localhost:8099/","status"=>App\Enums\AppStatus::Idle]);'
+php artisan serve --port=8123 &
+php artisan queue:work &
+```
+
+(No `--timeout` needed — `DeployApp::$timeout` wins; see the Phase 7 notes
+below.)
+
+Then log in at `http://127.0.0.1:8123/login` with `BRIDGE_ADMIN_EMAIL` /
+`BRIDGE_ADMIN_PASSWORD` from `.env` and press Deploy. A full cycle (pull, pull
+image, down, up --build, 5 post-deploy steps) takes about 11 seconds.
+
+Clean up after with `docker compose down` inside the checkout, deleting the
+rows, and `rm -rf repos/bridge-test-app` — a leftover `running` row makes the
+next `bridge:reset-stuck-deployments` test ambiguous.
+
+### For Phase 7 (packaging) and Phase 8 (cleanup)
+
+- **The job timeout is already handled; `retry_after` is the one that is not.**
+  `DeployApp`'s docblock used to say Phase 7's `queue:work` must ALSO pass
+  `--timeout=0` or the worker's shorter timeout would win. That is wrong and
+  the docblock is now corrected: `Worker::timeoutForJob()` is
+  `$job->timeout() !== null ? $job->timeout() : $options->timeout`, and the
+  property rides into the payload via `Queue::createPayloadArray()`, so
+  `$timeout = 0` beats the flag. Passing `--timeout=0` anyway is harmless.
+
+  What is genuinely unresolved is `config/queue.php`'s
+  `'retry_after' => env('DB_QUEUE_RETRY_AFTER', 90)`. It is not a kill switch —
+  it makes a reserved job visible again 90 seconds in, which with **exactly one
+  worker** cannot bite (the job row is deleted when `handle()` returns, before
+  that worker polls again). It becomes a duplicate-deploy bug the moment
+  anything runs a second worker. Phase 7 keeps concurrency at 1, so the safe
+  move is to write that dependency down next to the supervisord config rather
+  than leave the 90 as an unexamined default.
+
+  Neither of these shows up in an 11-second test deploy. Do not treat a green
+  smoke test as proof the worker is configured for a 40-minute build.
+- **Livewire's own JS needs no build step.** It is served from `vendor/` through
+  Livewire's asset route (`Mechanisms\FrontendAssets`), not through Vite. The
+  Dockerfile's Node build stage is still required for the Filament theme
+  (`resources/css/filament/admin/theme.css`), unchanged from Phase 0 — Phase 6
+  added no new Vite input.
+- **`wire:poll` throttles itself in a background tab** — Livewire skips ~95% of
+  ticks unless the directive carries `.keep-alive`. A backgrounded log page
+  therefore updates every ~20s, then catches up in one chunk when refocused.
+  Deliberate (it is the same reason `.keep-alive` exists) and a behaviour change
+  from the reference, whose `EventSource` streamed regardless. Nothing is lost —
+  the next poll always slices from the stored offset. Worth knowing before
+  someone reports the log viewer as "stuck" while watching another tab.
+- **The log viewer is the app's only sustained request load**, one request per
+  second per open deployment page, each doing a `SELECT` on the deployments row.
+  It is what makes the web server's concurrency setting matter at all in Phase
+  7: a single-worker PHP server blocks the whole panel behind an open log page.
+- **Phase 8's cleanup list should now also drop the SSE machinery** it inherits:
+  `reference/` goes wholesale, but check nothing outside it still points at
+  `/deployments/:id/stream`.
+- **Phase 8 owes `RollbackAction` a decision** — its in-action `commit_sha`
+  guard is unreachable for the reason established above, and its docblock
+  asserts a stale-submit path that Filament does not allow. Delete the guard or
+  correct the docblock; do not leave the claim standing.
+- `app/Livewire/` is new — the first non-Filament Livewire component in the
+  port. `resources/views/livewire/` sits in Livewire v4's
+  `component_locations`, but the component is class-based and resolved by class
+  string, so nothing tries to read that Blade file as a single-file component.
+
 ## Parity acceptance
 
 `reference/tests/` and `reference/src/services/*.test.ts` hold **115 cases**.
 They are the behavioural contract for this port — every one should map to a
 ported test. The two SSE tests are replaced by polling tests; HTML feature tests
 become authenticated Filament tests.
+
+The two SSE cases (`reference/tests/Feature/sseStream.test.ts`) were discharged
+in Phase 6. Neither transfers literally — both assert transport details of a
+mechanism this port does not use:
+
+- "returns text/event-stream content type" has no counterpart at all; there is
+  no stream and no content type to assert. The behaviour underneath it — output
+  reaching the page as it is written — is
+  `DeploymentLogTest::test_a_poll_dispatches_only_the_bytes_appended_since_the_last_one`,
+  plus the real-deploy check that it arrives incrementally rather than in one
+  burst.
+- "emits done event for terminal deployment" becomes
+  `test_the_poll_attribute_is_dropped_once_the_deployment_finishes` and
+  `test_it_never_starts_polling_a_deployment_that_is_already_finished`: the
+  polling equivalent of closing the stream is ceasing to ask.
 
 (The reference README claims 35 tests. That is stale.)

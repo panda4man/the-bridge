@@ -63,11 +63,20 @@ class DeployApp implements ShouldQueue
 
     /**
      * Laravel's queue worker kills a job at 60 seconds by default. A real
-     * `docker compose up -d --build` can run far longer than that. This
-     * disables the job-level timeout; Phase 7's supervisord `queue:work`
-     * invocation must ALSO be started with --timeout=0 — the job property
-     * alone is not sufficient if the worker process itself enforces a
-     * shorter timeout (see docs/porting-notes.md).
+     * `docker compose up -d --build` can run far longer than that, so the
+     * timeout is disabled here.
+     *
+     * This property alone IS sufficient — corrected in Phase 6 after reading
+     * the worker rather than assuming. `Worker::timeoutForJob()` is
+     * `$job->timeout() !== null ? $job->timeout() : $options->timeout`, and
+     * `Queue::createPayloadArray()` carries this property into the payload, so
+     * a job that declares a timeout wins over whatever `queue:work --timeout`
+     * says. Phase 7 does not need to pass the flag (passing `--timeout=0`
+     * anyway is harmless and self-documenting).
+     *
+     * The setting that CAN still cut a long deploy short is `retry_after` on
+     * the queue connection, which is a different mechanism — see
+     * docs/porting-notes.md, Phase 6's handoff notes.
      */
     public $timeout = 0;
 
