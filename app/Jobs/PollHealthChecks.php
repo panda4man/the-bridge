@@ -10,11 +10,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * Self-rescheduling health-check tick. This is the invocation mechanism
  * App\Services\HealthPoller's class docblock specifies (see it for the full
  * reasoning, which is settled — not open for re-litigation here): a queued
- * job processed by the SAME `queue:work` worker Phase 3's DeployApp already
- * runs under, not Laravel's scheduler (needs cron or `schedule:work` — a
- * third process) and not a bespoke long-running loop (also a third
- * process). Phase 7's supervisord budget is a web server plus ONE
- * `queue:work`.
+ * job, not Laravel's scheduler (needs cron or `schedule:work`) and not a
+ * bespoke long-running loop.
  *
  * `handle()` calls HealthPoller::pollDue() once, then re-dispatches itself
  * with a delay — forever, once started. The reference's own cadence is a
@@ -23,20 +20,31 @@ use Illuminate\Foundation\Queue\Queueable;
  * HealthPoller::isDue(), so this job's only job is to tick at a fixed rate
  * and let isDue() decide which apps are actually due each time.
  *
- * Deliberately stays on the DEFAULT queue, same as DeployApp (and the
- * rollback deploys it can chain) — see docs/porting-notes.md's Phase 3
- * notes. Naming a queue here would require Phase 7's supervisord
- * `queue:work` invocation to pass a matching `--queue` flag, and a mismatch
- * would mean this job — and therefore ALL health polling — silently never
- * runs. Not done here; if head-of-line blocking between deploys and health
- * polls (see below) ever becomes a real problem, that is a Phase 7 decision
- * to make deliberately, with both processes' queue names chosen together.
+ * Runs on its OWN queue, named by self::QUEUE. This reverses the Phase 3
+ * position that it should share DeployApp's `default` queue, and the reversal
+ * is the deliberate Phase 7 decision the previous note deferred to.
  *
- * Ordering consequence worth knowing (not a bug): a single `queue:work`
- * worker runs one job at a time, so a long deploy blocks this job's tick
- * for the deploy's full duration. The poller simply catches up on its next
- * tick once the worker frees up — HealthCheck rows are additive, not a
- * fixed-size buffer, so nothing is lost, only delayed.
+ * The reason: one worker runs one job at a time, so on a shared queue a
+ * `docker compose up -d --build` that legitimately takes 40 minutes blocks
+ * this tick for 40 minutes — no health checks, and no Slack down-alert for
+ * any OTHER app, for the whole build. The reference has no such stall; its
+ * poller lives in the web process and is unaffected by deploys. That is a
+ * parity regression, not merely a latency one.
+ *
+ * The fix is a second single-slot worker, NOT a second worker on `default`.
+ * Deploy concurrency must stay at exactly 1: config/queue.php's
+ * `retry_after` (90s) makes a reserved job visible again mid-run, which is
+ * harmless only while the single worker holding it is the only one that
+ * could pick it up. A second `default` worker turns every deploy longer
+ * than 90 seconds into a duplicate deploy. Splitting by queue name keeps
+ * `default` at one worker and that invariant intact.
+ *
+ * The failure mode the Phase 3 note warned about is real: if supervisord's
+ * health worker is started with a `--queue` that does not match self::QUEUE,
+ * this job is enqueued forever and never run, and ALL health polling stops
+ * silently. tests/Feature/Packaging/SupervisordConfigTest.php reads
+ * docker/supervisord.conf and asserts the two agree, so the drift cannot
+ * land green.
  *
  * The re-dispatch lives in `finally`, not at the end of a happy path — this
  * is the single most important line in the class. An uncaught throw here is
@@ -57,6 +65,18 @@ class PollHealthChecks implements ShouldQueue
      * HealthPoller::isDue() is what actually gates each app.
      */
     public const TICK_INTERVAL_SECONDS = 60;
+
+    /**
+     * Queue name. Read by docker/supervisord.conf's `health-worker` program
+     * and pinned against it by SupervisordConfigTest — do not rename one
+     * without the other. See the class docblock.
+     */
+    public const QUEUE = 'health';
+
+    public function __construct()
+    {
+        $this->onQueue(self::QUEUE);
+    }
 
     public function handle(HealthPoller $poller): void
     {

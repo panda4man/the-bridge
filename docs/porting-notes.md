@@ -2292,6 +2292,278 @@ next `bridge:reset-stuck-deployments` test ambiguous.
   `component_locations`, but the component is class-based and resolved by class
   string, so nothing tries to read that Blade file as a single-file component.
 
+## Phase 7 — packaging
+
+Files: `docker/{Dockerfile,Caddyfile,entrypoint.sh,supervisord.conf,php.ini}`,
+`docker-compose.yml`, `.dockerignore`, plus `bridge.sh` and `Makefile` restored
+to the repository root. One application change (`PollHealthChecks`) and one
+test file (`tests/Feature/Packaging/PackagingConfigTest.php`).
+
+### The web tier is FrankenPHP, not nginx + php-fpm
+
+Classic mode. **No application code changed for it** — FrankenPHP is a PHP SAPI
+embedded in Caddy, and each request still boots the framework exactly as
+php-fpm would.
+
+The reason is operational, not throughput: one supervisord program and one
+30-line Caddyfile, versus three programs and three configs (nginx site, fpm
+pool, and the socket wiring between them) plus `pm.max_children` guesswork
+against the log viewer's steady 1 request/second/tab. Performance between the
+two is a wash at this scale and nobody should pick either for speed here.
+
+**Do not turn on worker mode.** `FRANKENPHP_CONFIG="worker ./public/index.php"`
+keeps the application booted between requests like Octane; every singleton and
+static in the app then outlives a request, and nothing in this port has been
+written or reviewed against that. The Caddyfile says so at the top.
+
+Costs accepted, recorded so nobody rediscovers them as surprises: PHP is a ZTS
+build, and the community answer volume for a 2am Caddyfile problem is much
+thinner than for nginx. Reverting is contained — the Dockerfile, the Caddyfile
+becoming an nginx conf plus an fpm pool, and two more supervisord blocks. No
+application code either way, in both directions.
+
+### The Phase 3 queue decision was reversed, deliberately
+
+`PollHealthChecks` now runs on its own `health` queue and has its own worker.
+Phase 3 said it should share `default`, and its own docblock deferred the
+question to "a Phase 7 decision to make deliberately". This is that decision.
+
+What forced it: one worker runs one job at a time, so on a shared queue a
+40-minute `docker compose up --build` blocks the health tick for 40 minutes —
+no health checks, and **no Slack down-alert for any other app**, for the whole
+build. The reference has no such stall; its poller lives in the web process.
+That is a parity regression, not a latency one.
+
+The fix is a second **single-slot** worker on a different queue, never a second
+worker on `default`. `retry_after` (90s) makes a reserved job visible again
+mid-run; that is harmless only while the one worker holding it is the only one
+that could take it. A second `default` worker turns every deploy longer than 90
+seconds into a duplicate deploy. Splitting by queue name keeps that invariant
+exactly intact — which is why `retry_after` still does not need changing, and
+why the note that it was "genuinely unresolved" is now discharged rather than
+inherited by Phase 8.
+
+The failure mode Phase 3 warned about is real and silent: a `--queue` in
+supervisord that does not match the job's queue enqueues health ticks forever
+and runs none of them, with no error anywhere.
+`tests/Feature/Packaging/PackagingConfigTest.php` reads `supervisord.conf` off
+disk and pins the two together, along with the other config-only invariants
+nothing else in the suite would ever touch.
+
+`--tries=1` on the health worker is also load-bearing, not tuning.
+`PollHealthChecks` re-dispatches itself from a `finally`, so a tick that throws
+has *already* scheduled its successor; retrying that same job forks the chain
+in two, and again on every later failure.
+
+### Entrypoint obligations, and the ordering trap inside them
+
+`docker/entrypoint.sh` runs once per container start — before supervisord, so
+a supervisord restart of a crashed worker cannot re-run any of it. That is
+exactly the guarantee `PollHealth`'s docblock asks for, and it is why the
+health-chain kickoff must never move into a `[program:]` block.
+
+Order matters and is not arbitrary:
+
+1. `REPOS_PATH`-without-`BRIDGE_REPOS_PATH` check — **fatal**, before anything
+   is written. The Phase 5 note asked Phase 7 to "consider" failing loudly
+   here; it does. Silently falling back to `/repos` gives a misleading "path
+   not found" much later and far from the cause.
+2. `BRIDGE_REPOS_PATH` exists and is writable inside the container — fatal.
+   The same-absolute-path invariant is already broken if it is not.
+3. `/data` + `/data/ssh` (0700) + the SQLite file.
+4. `APP_KEY`: if unset, generated once into `/data/app_key` and reused. No
+   baked default — a shipped key is a published key, and this container fronts
+   a panel that deploys arbitrary code. Persisted rather than regenerated, or
+   every operator would be logged out on every rebuild.
+5. **`optimize:clear`** — this one is easy to miss. `docker compose restart`
+   reuses the container filesystem, so a config cache built on the *previous*
+   boot survives, and every command below would read the old environment,
+   including `DB_DATABASE`. Migrating and seeding the wrong file is a quiet way
+   to lose a database.
+6. `migrate --force`, `db:seed --force`, `bridge:reset-stuck-deployments` —
+   the reset before the web server accepts a request, so the panel never shows
+   a deploy nothing is running.
+7. `optimize` — safe to build here and only here, because everything it
+   captures comes from an environment that is fixed for the container's life.
+8. `bridge:poll-health`, exactly once.
+9. `exec supervisord` — `exec` so supervisord is PID 1 and actually receives
+   `docker stop`'s SIGTERM. Without it the graceful shutdown below never runs.
+
+### The graceful-shutdown fix is real, and was measured
+
+`deploy-worker` has `stopwaitsecs=600` and compose has `stop_grace_period: 11m`;
+`stopasgroup`/`killasgroup` stay **false**, because `queue:work`'s children
+*are* the deploy — signalling the group would kill `docker compose up --build`
+instead of letting it finish.
+
+Verified rather than assumed: a deploy was started, `docker compose stop` was
+issued 2 seconds in, and the stop **blocked for 5.1 seconds** until the deploy
+completed. The deployment row was `success`, and the next boot reported "Reset
+0 stuck deployment(s)". The Express worker's `process.exit(0)` would have
+abandoned it. `pcntl` is installed for this reason and is pinned by a test —
+without it `queue:work` cannot trap SIGTERM at all.
+
+### Docker environment: one pin kept, one dropped
+
+`DOCKER_BUILDKIT=0` is kept (image `ENV`, overridable from compose). It pins
+managed apps' builds to the legacy builder, which is what this application has
+actually been run against. `docker-buildx-plugin` is installed anyway, so
+`DOCKER_BUILDKIT=1` in compose is the whole switch.
+
+`DOCKER_API_VERSION=1.43` is **dropped**. The Express image needed it because
+Debian's `docker.io` CLI was years behind; this image installs `docker-ce-cli`
+from Docker's own repository, and a current CLI negotiates the API version with
+the host daemon over `/_ping`. Setting the variable *disables* that
+negotiation, and would break against any future host whose minimum API version
+rises above 1.43. Confirmed from inside the running container: it reports the
+host's `1.55`.
+
+Both were checked on Docker 29.6.2 / Compose v5.3.1 before deciding —
+`DOCKER_BUILDKIT=0` still builds (the legacy builder is present), and
+`DOCKER_API_VERSION=1.43` still connects (host `minapi=1.40`). Neither was
+removed because it was broken.
+
+### `health_url` must resolve from INSIDE the container
+
+New, and not obvious. The health poller runs in the queue worker, so
+`health_url` is fetched from the Bridge container's network namespace, not the
+host's. `http://localhost:8099/` — which is what an operator reads off their
+own browser — points the poller at the Bridge container itself, and every check
+fails or, worse, succeeds against the wrong thing.
+
+The Phase 6 fixture's URL had to become
+`http://host.docker.internal:8099/` for the containerised run. On Linux there
+is no such name by default; a managed app either needs `extra_hosts:
+host.docker.internal:host-gateway`, its own container name on a shared network,
+or a real hostname. Worth surfacing in the panel's help text one day; recorded
+here for now.
+
+### Smaller findings
+
+- **Caddy was writing into `/data`.** The upstream FrankenPHP/Caddy images set
+  `XDG_DATA_HOME=/data` and `XDG_CONFIG_HOME=/config` as their own volume
+  convention, so Caddy's certificate store landed in the volume an operator
+  backs up, next to the SQLite database and the deploy key. Both are now
+  pointed at `/var/lib/bridge`. With `auto_https off` and `admin off` nothing
+  in there needs to survive.
+- **`BRIDGE_SSH_KEY_PATH` is deliberately not interpolated from `.env`.**
+  Unlike `BRIDGE_REPOS_PATH`, which *must* be the host path, the key is only
+  ever read inside the container, and a developer `.env` points it at a host
+  directory that does not exist there. Hardcoded to `/data/ssh/id_rsa` in
+  compose.
+- **`env_file: .env` is not used and a test forbids it.** A developer `.env`
+  carries `APP_ENV=local` and `APP_DEBUG=true`, and a debug-mode panel that can
+  deploy arbitrary code renders stack traces containing its own configuration
+  to anyone who reaches a 500.
+- **Compose reads the same `.env` Laravel does**, for interpolation. That is
+  convenient and is why every container-only variable added to `.env.example`
+  (`BRIDGE_PORT`, `DOCKER_SOCK`, `DB_QUEUE_RETRY_AFTER`) is grouped under a
+  "Container only" heading — they are meaningless to `artisan serve`.
+- **Livewire v4's asset route is hash-prefixed** — `/livewire-7c3e1dc9/…`, not
+  `/livewire/…`. Nothing needs configuring; it is only worth knowing before
+  someone curls the old path, gets a 404, and concludes the assets are missing.
+- **The `vendor` stage needs `ext-intl` and `ext-zip` too**, not just the
+  runtime: composer enforces the dependency tree's `ext-*` requirements at
+  install time, and `filament/support` will not resolve without them. Both
+  stages therefore share a `php-base` stage. The first build failed exactly
+  this way.
+- **`bridge.sh` and `Makefile` were restored to the repository root.** They had
+  been moved under `reference/`, which Phase 8 deletes wholesale — they would
+  have gone with it. Unchanged: they only ever drove `docker compose` in this
+  directory.
+
+### Verified against a real deploy, which is the phase's exit criterion
+
+Everything below ran against the real host Docker daemon through the mounted
+socket, with the app row, the database and the clone all living inside the
+container:
+
+- `docker compose up` boots clean; all three supervisord programs reach
+  RUNNING; the compose healthcheck reports `healthy`.
+- **Path identity proven, not assumed**: the container cloned into
+  `/Users/…/the-bridge-laravel/repos/bridge-test-app` and the host sees the
+  same tree at the same absolute path.
+- Three successful deploys (pull, image pull, down, `up -d --build`, 5 chatty
+  post-deploy steps), ~6 seconds each, `commit_sha` and `commit_message`
+  recorded, and the deployed app answering 200 on the host at `:8099`.
+- API fails closed with 503 before a token exists, 401 on a wrong token, 200
+  with the right one — resolved through the **settings-table** layer, with
+  `BRIDGE_API_TOKEN` empty.
+- `X-Deploy-Done: true` / `X-Log-Offset: 824` on the log endpoint, unchanged
+  from Phase 5.
+- Health chain alive across the whole session: 9 `HealthCheck` rows recording
+  `up`, exactly one pending job and it is on the `health` queue, zero failed
+  jobs.
+- Every asset the login page references returns 200 — the Vite-built Filament
+  theme, all seven `filament:upgrade`-published bundles, and Livewire's JS.
+- 437 tests / 1190 assertions green (fixed + seeds 1, 4242, 31337). Pint fails
+  only on the pre-existing `bootstrap/providers.php`.
+
+### What the suite cannot cover
+
+The packaging test reads config files; it cannot run them. Nothing in CI proves
+the image builds, the socket is reachable, the GID match works, or that a
+deploy succeeds — those were checked by hand, above, and must be re-checked by
+hand after any change to `docker/`. In particular a green suite says nothing
+about an 11-second smoke deploy standing in for a 40-minute build; the
+`retry_after` and `stopwaitsecs` reasoning is argued from the code, not
+measured at that duration.
+
+### Re-running the containerised check
+
+`.env` needs `BRIDGE_PORT`, and on macOS `DOCKER_SOCK` — the Docker Desktop
+socket is at `~/.docker/run/docker.sock`, **not** `/var/run/docker.sock`
+(`docker context inspect --format '{{.Endpoints.docker.Host}}'`).
+
+The fixture at `/Users/aclinton/Dev/Personal/Docker/bridge-test-app` is a local
+path, so the container needs it mounted to clone it. That mount is a local
+testing concern and is deliberately **not** in the committed compose file — use
+an override:
+
+```yaml
+# /tmp/override.yml
+services:
+  bridge:
+    volumes:
+      - /Users/aclinton/Dev/Personal/Docker/bridge-test-app:/Users/aclinton/Dev/Personal/Docker/bridge-test-app:ro
+```
+
+```bash
+docker compose -f docker-compose.yml -f /tmp/override.yml up -d --build
+docker compose cp provision.php bridge:/tmp/provision.php   # see Phase 6's recipe,
+docker compose exec -T bridge php artisan tinker /tmp/provision.php
+```
+
+with `health_url` set to `http://host.docker.internal:8099/` rather than
+`localhost`. Then set a token
+(`Setting::setValue('api_token', …)`) and `POST /api/apps/1/deploy`, or log in
+at `http://127.0.0.1:8080/` and press Deploy.
+
+Clean up with `docker compose down -t 0`, `rm -rf repos/bridge-test-app data`,
+and `docker compose down` inside the fixture checkout.
+
+### For Phase 8 (cleanup)
+
+- **`retry_after` is discharged, not inherited.** Phase 6 left it open; the
+  two-queue split resolved it. What Phase 8 must not do is add a worker to
+  `default` without revisiting it — the test suite pins the count, but only in
+  `supervisord.conf`.
+- The reference's `docker/` directory, `bridge.sh` and `Makefile` are now
+  duplicated: the live copies are at the repository root, the originals under
+  `reference/`. Deleting `reference/` wholesale is correct and loses nothing.
+- Phase 8's Dockerfile deletion item refers to `reference/docker/Dockerfile`.
+  The root `docker/Dockerfile` is the live one.
+- `public/theme.js` and `public/lcars.css`: only the former is on the deletion
+  list. `lcars.css` is still the design system Phase 0 mapped the palette from
+  and the `.lcars-log` source of truth — check the Filament theme copy before
+  touching it.
+- The README rewrite should carry the `REPOS_PATH` → `BRIDGE_REPOS_PATH` and
+  `SESSION_SECRET` → `APP_KEY` migration, the `DOCKER_SOCK` macOS caveat, and
+  the `health_url`-from-inside-the-container point. All three are currently
+  only in `.env.example` and here.
+- The `RollbackAction` docblock decision from Phase 6 is still open; Phase 7
+  did not touch it.
+
 ## Parity acceptance
 
 `reference/tests/` and `reference/src/services/*.test.ts` hold **115 cases**.

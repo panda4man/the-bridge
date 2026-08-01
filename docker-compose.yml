@@ -1,0 +1,102 @@
+# The Bridge — Laravel + Filament.
+#
+# Compose reads the same `.env` this application does, so BRIDGE_* values are
+# declared once. Only the variables listed under `environment:` reach the
+# container: `env_file: .env` is deliberately NOT used, because a developer
+# .env carries APP_ENV=local and APP_DEBUG=true, and a debug-mode admin panel
+# that can deploy arbitrary code renders stack traces containing its own
+# secrets to anyone who reaches a 500.
+
+services:
+  bridge:
+    container_name: bridge
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+
+    ports:
+      - "${BRIDGE_PORT:-8080}:80"
+
+    volumes:
+      # NON-NEGOTIABLE: same absolute path on both sides. apps.path stores
+      # absolute paths, and they are resolved both by the queue worker inside
+      # the container and by anything an operator runs on the host. A
+      # conventional `./repos:/repos` mapping breaks every stored path the
+      # moment the two differ.
+      - ${BRIDGE_REPOS_PATH:?BRIDGE_REPOS_PATH must be set — it is the base directory apps are cloned into, and it is mounted at the same absolute path inside the container. If you are upgrading from the Express version, this variable was called REPOS_PATH.}:${BRIDGE_REPOS_PATH}
+
+      # The host Docker daemon. DOCKER_SOCK defaults to the Linux path; on
+      # Docker Desktop for macOS the socket is at $HOME/.docker/run/docker.sock
+      # and this default binds a path that does not exist, which presents as
+      # every Docker call failing on a host that otherwise looks healthy.
+      # Confirm with:
+      #   docker context inspect --format '{{.Endpoints.docker.Host}}'
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+
+      # SQLite database, sessions, cache, queue, the generated APP_KEY, and
+      # data/ssh/id_rsa — the private deploy key for every managed private
+      # repo. Gitignored; back it up.
+      - ./data:/data
+
+    environment:
+      APP_NAME: ${APP_NAME:-The Bridge}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      # Optional. Left empty, the entrypoint generates a key once and persists
+      # it to /data/app_key. There is no default key on purpose.
+      APP_KEY: ${APP_KEY:-}
+      # Externally reachable URL. Used in Slack notifications and in the
+      # webhook URL the panel displays, so localhost is wrong the moment this
+      # runs anywhere but your laptop.
+      APP_URL: ${APP_URL:-http://localhost:${BRIDGE_PORT:-8080}}
+
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /data/bridge.sqlite
+
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      # Read together with docker/supervisord.conf. This makes a reserved job
+      # visible again after N seconds; it is safe only because exactly one
+      # worker serves the `default` queue. Raising the worker count there
+      # without raising this turns any deploy longer than N seconds into a
+      # duplicate deploy.
+      DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-90}
+
+      BRIDGE_REPOS_PATH: ${BRIDGE_REPOS_PATH}
+      # Deliberately NOT interpolated from .env. Unlike BRIDGE_REPOS_PATH —
+      # which must be the host path, because apps.path is resolved on both
+      # sides — the key is only ever read inside the container, and a
+      # developer .env points it at a host directory that does not exist here.
+      # The entrypoint creates and locks down /data/ssh; put the key there.
+      BRIDGE_SSH_KEY_PATH: /data/ssh/id_rsa
+      # Auth FAILS CLOSED. Empty here and no `api_token` row in settings means
+      # /api returns 503 to every caller — it does not mean the API is public.
+      BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:-}
+
+      # First panel administrator, created once on boot. The panel has no
+      # public registration; without these there is no way to log in.
+      BRIDGE_ADMIN_NAME: ${BRIDGE_ADMIN_NAME:-Administrator}
+      BRIDGE_ADMIN_EMAIL: ${BRIDGE_ADMIN_EMAIL:-}
+      BRIDGE_ADMIN_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:-}
+
+      # Overrides the image default of 0 (legacy builder) if you want BuildKit
+      # for managed apps' builds. buildx is installed either way.
+      DOCKER_BUILDKIT: ${DOCKER_BUILDKIT:-0}
+
+    # Matches deploy-worker's stopwaitsecs (600s) plus supervisord's own
+    # shutdown, so an ordinary `docker compose down` lets an in-flight deploy
+    # finish instead of abandoning it. Use `down -t 0` when you do not care;
+    # `bridge:reset-stuck-deployments` cleans up either way on the next boot.
+    stop_grace_period: 11m
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

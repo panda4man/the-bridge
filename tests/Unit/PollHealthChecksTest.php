@@ -70,18 +70,24 @@ class PollHealthChecksTest extends TestCase
     }
 
     /**
-     * The re-dispatch must stay on the DEFAULT queue. Phase 7's supervisord
-     * runs a single `queue:work` with no `--queue` flag, which consumes
-     * `default` only — so naming a queue here would mean this job, and
-     * therefore ALL health polling, silently never runs in production while
-     * every test stayed green.
+     * REVERSED IN PHASE 7. This test previously asserted the opposite — that
+     * the job stays on the DEFAULT queue — because Phase 3 expected a single
+     * `queue:work` with no `--queue` flag, which would have meant a named
+     * queue silently stopped all health polling. Phase 7 chose the two-worker
+     * topology instead (docker/supervisord.conf), so `health` is now the
+     * correct answer and a null queue is the bug: it would put every tick
+     * behind whatever deploy is running, for the deploy's whole duration.
      *
-     * Verified by mutation: adding ->onQueue('health') to the re-dispatch
-     * survived the entire suite (QC mutation H3-poller-on-named-queue).
-     * A null `queue` property is how Laravel represents "the connection's
-     * default queue".
+     * The mutation this kills is the same one under the new decision, just
+     * inverted — dropping the constructor's onQueue() call. That matters
+     * specifically because the re-dispatch in `finally` constructs a FRESH
+     * instance: without it the chain would run on `health` exactly once and
+     * then silently migrate to `default` forever after.
+     *
+     * The other half of this invariant — that supervisord actually runs a
+     * worker on this queue — is Tests\Feature\Packaging\PackagingConfigTest.
      */
-    public function test_handle_reschedules_itself_onto_the_default_queue(): void
+    public function test_handle_reschedules_itself_onto_the_health_queue(): void
     {
         Http::fake(fn () => Http::response('', 200));
         App::factory()->create(['health_url' => 'https://example.test/health']);
@@ -90,8 +96,16 @@ class PollHealthChecksTest extends TestCase
 
         Bus::assertDispatched(
             PollHealthChecks::class,
-            fn (PollHealthChecks $job): bool => $job->queue === null,
+            fn (PollHealthChecks $job): bool => $job->queue === PollHealthChecks::QUEUE,
         );
+    }
+
+    public function test_the_first_tick_dispatched_by_the_command_is_also_on_the_health_queue(): void
+    {
+        // The entrypoint's `bridge:poll-health` starts the chain. If only the
+        // re-dispatch carried the queue name, the very first tick would land
+        // on `default` and nothing on `health` would ever run.
+        $this->assertSame(PollHealthChecks::QUEUE, (new PollHealthChecks)->queue);
     }
 
     public function test_tick_interval_matches_the_references_fixed_60_second_cadence(): void

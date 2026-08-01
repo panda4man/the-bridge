@@ -1,0 +1,38 @@
+# FrankenPHP (Caddy + PHP in one process) — replaces the nginx + php-fpm pair.
+#
+# Classic mode only. Do NOT add `worker /app/public/index.php` to the
+# frankenphp block: worker mode keeps the application booted between requests
+# like Octane, which changes the lifetime of every singleton and static in the
+# app and would need a full audit of Filament and Livewire state. Nothing in
+# this port has been written against that assumption.
+{
+	# No local CA, no auto-HTTPS: the container serves plain HTTP and TLS is
+	# whatever fronts it (Dockge, Traefik, Caddy on the host, an SSH tunnel).
+	# `:80` as the site address is what actually disables auto-HTTPS — a
+	# hostname here would make Caddy try to issue a certificate on boot.
+	auto_https off
+	skip_install_trust
+	admin off
+
+	frankenphp
+}
+
+:80 {
+	root /app/public
+	encode zstd br gzip
+
+	# Access logging is off by default. The deploy log viewer polls once per
+	# second per open deployment page (docs/porting-notes.md, Phase 6), so
+	# access logs would bury real output in `docker logs` at ~86k lines a day
+	# per open tab. Errors still reach stderr. Drop `level ERROR` to get the
+	# full access log back.
+	log {
+		output stderr
+		format console
+		level ERROR
+	}
+
+	# Laravel's front controller: static files served directly, everything
+	# else routed to public/index.php.
+	php_server
+}
