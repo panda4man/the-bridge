@@ -2542,27 +2542,109 @@ at `http://127.0.0.1:8080/` and press Deploy.
 Clean up with `docker compose down -t 0`, `rm -rf repos/bridge-test-app data`,
 and `docker compose down` inside the fixture checkout.
 
-### For Phase 8 (cleanup)
+### State at handoff
 
+Phase 7 is complete. Nothing is left half-built.
+
+| | |
+|---|---|
+| Branch | `laravel-port`, worktree `../the-bridge-laravel` |
+| Suite | 437 tests / 1190 assertions, green (fixed + seeds 1, 4242, 31337) |
+| Pint | fails only on the pre-existing `bootstrap/providers.php` |
+| Phase 6 | committed as `b1fdc61` — it was still uncommitted when Phase 7 began |
+| Phase 7 | committed as `3f9627a` |
+
+Touched by this phase — 4 modified, 9 new:
+
+```
+M .env.example                              container-only vars, rename migration
+M app/Jobs/PollHealthChecks.php             QUEUE const + onQueue in constructor
+M tests/Unit/PollHealthChecksTest.php       the reversed queue assertion
+M docs/porting-notes.md
++ docker/Dockerfile                         php-base / vendor / assets / runtime
++ docker/Caddyfile                          classic mode, :80, access log off
++ docker/entrypoint.sh                      the once-per-boot obligations
++ docker/supervisord.conf                   frankenphp + 2 single-slot workers
++ docker/php.ini
++ docker-compose.yml
++ .dockerignore
++ bridge.sh, Makefile                        restored from reference/
++ tests/Feature/Packaging/PackagingConfigTest.php
+```
+
+**Phase 7 was NOT QC'd by Opus.** Every phase from 1 to 6 was; this one went
+straight from implementation to commit. If the phase gate is being honoured,
+that QC is owed before or alongside Phase 8's final pass, and the obvious place
+to aim it is the gap named under "What the suite cannot cover" — the packaging
+test reads config files but cannot run them.
+
+**The local environment was returned to empty** — containers down, `data/` and
+`repos/bridge-test-app` removed, the fixture's own compose project torn down.
+Two lines were left in `.env` on purpose (`BRIDGE_PORT=8080`,
+`DOCKER_SOCK=/Users/aclinton/.docker/run/docker.sock`); `.env` is gitignored,
+and re-running the containerised check needs them.
+
+### For Phase 8 (cleanup) — the last phase
+
+**The plan's deletion list is stale. Check before deleting; three of its items
+are wrong now.**
+
+- `src/`, `tsconfig.json` and `vitest.config.ts` are **already gone** from the
+  repository root. They exist only under `reference/`, so deleting `reference/`
+  discharges all three.
+- **`package.json` and `node_modules/` at the root must NOT be deleted.** The
+  plan says to remove them as "Node app deps", which was true of the Express
+  application's; the ones there now are Vite + Tailwind v4 + laravel-vite-plugin
+  and they are what builds the Filament theme. `docker/Dockerfile`'s `assets`
+  stage runs `npm ci` and `npm run build` against them. Deleting them breaks the
+  image build. The Express `package.json` is under `reference/`.
+- Likewise "the Node Dockerfile" means `reference/docker/Dockerfile`. The root
+  `docker/Dockerfile` is the live one.
+- The reference's `docker/`, `bridge.sh` and `Makefile` are now duplicated —
+  live copies at the root, originals under `reference/`. Deleting `reference/`
+  wholesale is correct and loses nothing.
+
+On the two files in `public/`:
+
+- **`public/theme.js` is genuinely dead** — 504 bytes, an Express-era
+  `localStorage` theme toggle, referenced by nothing outside `reference/`
+  (Filament has its own dark mode). Safe to delete.
+- **`public/lcars.css` is also now unreferenced by live code**, which is a
+  change from when Phase 0 wrote the note below, and is a decision rather than a
+  cleanup. `.lcars-log` was *copied* into
+  `resources/css/filament/admin/theme.css`, so nothing loads `lcars.css` any
+  more — but it is still the original design system, the source the four brand
+  colours were mapped from, and the thing the theme's hardcoded hex values are
+  supposed to track (see "LCARS" under Project gotchas). Deleting it makes that
+  provenance unrecoverable. Recommend keeping it; do not delete it silently
+  either way.
+
+Verification items that need care:
+
+- **"No SSE survives" (plan verification #6) will produce false hits.** Grepping
+  for `EventSource` / `text/event-stream` / `Last-Event-ID` matches two things
+  that are not live code: the historical explanation in
+  `app/Livewire/DeploymentLog.php`'s docblock (deliberate — it records what
+  replaced what), and `docs/superpowers/plans/*.md`, which are May-2026 planning
+  artifacts predating this port. Scope the grep to `app/`, `resources/`,
+  `routes/`, `public/` and `config/`, and read the two docblock hits rather than
+  deleting them.
+- **The `bridge-mcp` consumer check (#5) should be re-run against the
+  container**, not `php -S`. Phase 5 ran it against a bare PHP server because no
+  container existed; one exists now, and the container is what ships. The
+  `php artisan serve` trap Phase 5 documented does not apply to it.
 - **`retry_after` is discharged, not inherited.** Phase 6 left it open; the
   two-queue split resolved it. What Phase 8 must not do is add a worker to
-  `default` without revisiting it — the test suite pins the count, but only in
-  `supervisord.conf`.
-- The reference's `docker/` directory, `bridge.sh` and `Makefile` are now
-  duplicated: the live copies are at the repository root, the originals under
-  `reference/`. Deleting `reference/` wholesale is correct and loses nothing.
-- Phase 8's Dockerfile deletion item refers to `reference/docker/Dockerfile`.
-  The root `docker/Dockerfile` is the live one.
-- `public/theme.js` and `public/lcars.css`: only the former is on the deletion
-  list. `lcars.css` is still the design system Phase 0 mapped the palette from
-  and the `.lcars-log` source of truth — check the Filament theme copy before
-  touching it.
+  `default` without revisiting it.
+
+Still owed:
+
 - The README rewrite should carry the `REPOS_PATH` → `BRIDGE_REPOS_PATH` and
-  `SESSION_SECRET` → `APP_KEY` migration, the `DOCKER_SOCK` macOS caveat, and
-  the `health_url`-from-inside-the-container point. All three are currently
+  `SESSION_SECRET` → `APP_KEY` migrations, the `DOCKER_SOCK` macOS caveat, and
+  the `health_url`-must-resolve-from-inside-the-container point. All three live
   only in `.env.example` and here.
-- The `RollbackAction` docblock decision from Phase 6 is still open; Phase 7
-  did not touch it.
+- The `RollbackAction` docblock decision from Phase 6 is still open; Phase 7 did
+  not touch it.
 
 ## Parity acceptance
 
