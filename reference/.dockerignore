@@ -1,9 +1,0 @@
-node_modules
-vendor
-.git
-.env
-data
-tests
-docker-compose*.yml
-.dockerignore
-docs

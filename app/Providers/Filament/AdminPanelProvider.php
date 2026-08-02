@@ -27,6 +27,12 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->brandName('The Bridge')
             ->brandLogo(asset('the-bridge-logo.png'))
+            // The reference shipped a 0-byte favicon.ico (one of the defects
+            // the plan lists as "fix explicitly during the port"); Phase 8
+            // rebuilt it at 16/32/48px from the same logo. Declared here so the
+            // panel emits the link tag rather than relying on the browser's
+            // implicit /favicon.ico request.
+            ->favicon(asset('favicon.ico'))
             ->darkMode()
             ->colors([
                 'primary' => Color::hex('#FF9900'),

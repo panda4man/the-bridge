@@ -10,12 +10,22 @@ have to re-derive.
 |---|---|
 | Phase plan | `~/.claude/plans/sorted-marinating-goose.md` |
 | Phase tracking | The task list — each task carries its own QC notes |
-| Specification | `reference/` — the original Express app, kept until Phase 8 |
+| Specification | the Express original — **deleted from this branch in Phase 8** |
 | Branch | `laravel-port`, in a worktree at `../the-bridge-laravel` |
 
-`reference/` is the source of truth for behaviour. When a requirement is
-ambiguous, read the TypeScript rather than guessing. Do not modify anything
-under it.
+`reference/` held the original Express app and was the source of truth for
+behaviour through Phases 1–7. Phase 8 deleted it, as planned. Roughly 80 files
+still cite paths under it (`reference/src/routes/apps.ts:195`, and so on) — the
+citations were deliberately left alone, because they are the provenance of
+nearly every non-obvious decision in this port. To read one:
+
+```bash
+git show main:src/routes/apps.ts          # the Express app still lives on `main`
+git show ea4d6f2:reference/src/routes/apps.ts   # or the last commit that had reference/
+```
+
+Phase 8's parity map (below, "Parity acceptance") records how all 115 of its
+test cases landed here, so the mapping survives the deletion.
 
 ## Versions — read this first
 
@@ -2642,11 +2652,288 @@ Still owed:
 - The README rewrite should carry the `REPOS_PATH` → `BRIDGE_REPOS_PATH` and
   `SESSION_SECRET` → `APP_KEY` migrations, the `DOCKER_SOCK` macOS caveat, and
   the `health_url`-must-resolve-from-inside-the-container point. All three live
-  only in `.env.example` and here.
+  only in `.env.example` and here. **Done in Phase 8** — all four are in the
+  README, the last one under its own heading.
 - The `RollbackAction` docblock decision from Phase 6 is still open; Phase 7 did
-  not touch it.
+  not touch it. **Done in Phase 8** — the guard was deleted, not the docblock
+  patched.
+
+## Phase 8 — cleanup and final QC
+
+The last phase. Files: `reference/` and `public/theme.js` deleted, `README.md`
+rewritten, three application changes (`RollbackAction`, `PollHealthChecks`
+docblock, `AdminPanelProvider`), two `docker/` changes, and four test files —
+two new, two extended. 477 tests / 1386 assertions green; Pint clean, including
+the `bootstrap/providers.php` failure that had been carried since Phase 0.
+
+### The deletion list, as executed
+
+Phase 7's corrections held. What actually happened:
+
+- `reference/` deleted wholesale (492K, 62 files). `src/`, `tsconfig.json`,
+  `vitest.config.ts` and the Express `package.json`/Dockerfile went with it —
+  they existed nowhere else, which is exactly what the stale plan item claimed
+  otherwise.
+- **Root `package.json` and `node_modules/` kept.** They are Vite + Tailwind v4
+  and they build the Filament theme. Proven rather than argued: the image was
+  rebuilt after the deletions and its `assets` stage still runs `npm ci && npm
+  run build`.
+- `public/theme.js` deleted — an Express-era `localStorage` toggle, referenced
+  by nothing.
+- `my-app/`, an untracked empty checkout the create-app tests leave at the
+  repository root when `BRIDGE_REPOS_PATH` resolves relative to it, removed. It
+  stays in `.dockerignore` because a test run recreates it.
+
+### `public/lcars.css` is kept, and is now load-bearing again
+
+Phase 7 left this open, correctly: the file was unreferenced but it is the
+source the theme's four brand colours and `.lcars-log` were copied from, and
+deleting it makes that provenance unrecoverable.
+
+Rather than keep it on the strength of a comment, `tests/Feature/LcarsThemeTest`
+now compares the copies against it: the theme's hardcoded `#0A0A0A`/`#33FF33`
+against lcars.css's `--color-log-bg`/`--color-log-text`, and the panel's four
+`Color::hex()` values against `--color-brand`/`--color-command`/
+`--color-sciences`/`--color-ops`. It also fails if either log variable is
+declared more than once — the exact drift the "LCARS" gotcha warns about, since
+a `[data-theme="dark"]` override is something the hardcoded copies cannot
+follow. Deleting `lcars.css` now fails three tests instead of quietly stranding
+the design system.
+
+### `RollbackAction`: the guard was deleted, not the docblock corrected
+
+Open since Phase 6. The in-action `! $record->commit_sha` refusal was proven
+unreachable the same way Phase 6 proved it for `ResetDeploymentAction` — write
+the test that asserts the danger notification, watch it fail with "A
+notification was not sent" — and then deleted. `visible()` is re-evaluated
+against a freshly-loaded record at `callMountedAction()`, so a stale page finds
+the action hidden, therefore disabled, and it unmounts without running.
+
+Kept in its place: `test_rolling_back_a_deployment_whose_sha_was_cleared_since_
+the_page_rendered_does_nothing`, which pins the mechanism that actually does the
+work. Deleting `visible()` kills it and two others. Phase 5's
+`POST /apps/:id/rollback` still keeps its own 400 — it has no Filament in front
+of it.
+
+### Phase 7's QC, owed and now paid — two real defects
+
+Aimed where the handoff said to aim it: "the packaging test reads config files;
+it cannot run them." Both findings were things a green suite was actively
+hiding.
+
+**1. The container could not boot on an empty `/data`.** `optimize:clear` runs
+`cache:clear` as one of its five steps; `CACHE_STORE` is `database`, so on a
+first boot that is a `DELETE` against a table `migrate` has not created yet.
+The command throws, `set -e` stops the entrypoint, and the container
+restart-loops with `no such table: cache` having never migrated. Phase 7's own
+verification missed it because it ran against a `/data` that already had a
+database. The fix clears `config`/`route`/`view`/`event` individually before
+`migrate` — the config cache still must go first, or migrations read the
+previous boot's `DB_DATABASE` — and runs `cache:clear` after it, once the table
+exists.
+
+**2. Every restart added a health chain.** Each tick re-dispatches its successor
+with a 60-second delay, and that successor is a row in the database queue, which
+lives on `/data` and outlives the container. So the entrypoint's "exactly once
+per container start" kickoff was adding a chain rather than starting one:
+reproduced at one stop/start → two pending health jobs, and one more on every
+restart after that. Doubling request volume and `HealthCheck` rows, with nothing
+anywhere reporting it. The entrypoint now runs `queue:clear --queue=health`
+immediately before the kickoff — the `health` queue carries nothing but this
+chain, so clearing it is precisely "cancel the old chain", and `default` (where
+deploys live) must never be cleared. Verified in the real container: one pending
+health job before a restart, one after.
+
+A third case was found and deliberately **not** fixed: if the health worker is
+SIGKILLed mid-tick, the `finally` never runs and the reserved job is failed by
+`--tries=1` when `retry_after` makes it visible again, so that chain is gone
+until the next boot re-kicks it. A `failed()` hook that re-dispatched would fork
+the chain in two on every ordinary throw, which is what `--tries=1` exists to
+prevent. A missing chain is visible (health checks stop); a forked one doubles
+silently forever. Both are recorded in `PollHealthChecks`'s docblock.
+
+### What the packaging test can now actually run
+
+The gap was that every assertion read the files as text, and text is happy with
+a YAML file that no longer parses or an entrypoint with an unclosed quote. Now:
+
+- `docker-compose.yml` is parsed with `symfony/yaml` and asserted against the
+  tree, not the source — including `APP_DEBUG`, `env_file`, both volume
+  mappings, and the socket's container-side path.
+- `supervisord.conf` is parsed as ini. A duplicated `[program:]` header reads
+  fine as text and makes supervisord refuse to start; it does not survive this.
+- `docker/entrypoint.sh` gets `sh -n`. The one thing about the entrypoint the
+  suite can genuinely execute.
+- `stop_grace_period` is compared against `deploy-worker`'s `stopwaitsecs`.
+  **This pair was completely unpinned**: `stopwaitsecs=600` only matters if the
+  container survives that long, and `docker stop`'s default grace period is 10
+  seconds. Lowering or deleting `stop_grace_period` silently restores the
+  abandoned-deploy defect while every other assertion here still passes.
+- `.dockerignore` must still exclude `.env`. The vendor stage does `COPY . .`,
+  so dropping that line bakes a developer `.env` into the layer; Laravel's
+  Dotenv would not override compose's `APP_ENV`/`APP_DEBUG`, but it *would*
+  supply everything compose omits — including `BRIDGE_API_TOKEN`, the
+  difference between an API that fails closed and one that accepts a token the
+  operator never set.
+- `ENTRYPOINT` is pinned. Every boot obligation lives in that script.
+
+Six mutations were run against the new assertions and all six were killed.
+
+Two stale references were also corrected: `PollHealthChecks` and
+`supervisord.conf` both pointed at `tests/Feature/Packaging/SupervisordConfigTest.php`,
+which has never existed — the file is `PackagingConfigTest.php`.
+
+### Route parity, pinned rather than asserted by hand
+
+Plan verification #3 had no test at all. `tests/Feature/RouteParityTest` now
+inspects the route TABLE — that is where the documented failure lives, since a
+colliding declaration in `web.php` replaces the panel's route and erases its
+name with no error anywhere. It pins each surviving reference endpoint to its
+handler, the webhook to `WebhookController` with no CSRF middleware, the three
+`filament.admin.*` route names, which routes are token-guarded and which two
+deliberately are not, that no route URI contains `stream`, and the seven
+reference endpoints that became Livewire interactions and must NOT resolve as
+HTTP routes. Two mutations — a colliding `Route::get('/login')` and dropping
+`api.token` from `routes/parity.php` — were both killed.
+
+`PanelSmokeTest` gained the three page GETs the reference asserted and nothing
+here covered: `/apps/create`, `/apps/{id}`, `/apps/{id}/edit`. Every other panel
+test mounts these pages through `Livewire::test()`, which bypasses routing
+entirely.
+
+### Verification items, as run
+
+1. **Per-phase QC** — Phase 7's was owed and is above.
+2. **Parity checklist** — all 115 cases mapped; the table now lives in this file
+   (below) so it survived `reference/`'s deletion. 112 map directly, 2 SSE cases
+   were discharged in Phase 6, 1 (`consecutiveFailures`) is the deliberate drop
+   the plan itself called for.
+3. **Route parity** — above.
+4. **Real deploy** — re-run in Phase 8 rather than inherited: the image was
+   rebuilt after every deletion, booted on an empty `/data`, and deployed the
+   fixture twice through the API. Path identity, the socket, the health chain
+   and graceful restart all still hold.
+5. **Consumer check** — re-run against the **container**, not `php -S`. All five
+   `bridge_mcp.client` calls pass against `http://127.0.0.1:8080/api` with the
+   token resolved from the settings table and `BRIDGE_API_TOKEN` empty:
+   `list_apps`, `list_branches`, `deploy_app` (202 → a real deploy that
+   succeeded, commit recorded), `get_deployment`, `get_deployment_log`. The
+   incremental tail arrived in 4 chunks over the deploy; polling from the final
+   offset returned an empty body with the offset unchanged; 404 and 401 both
+   surfaced as `BridgeApiError`.
+6. **No SSE survives** — grep scoped to `app/`, `resources/`, `routes/`,
+   `public/`, `config/`, `bootstrap/`, `database/`. One hit, in
+   `DeploymentLog`'s docblock, recording what replaced what. Read and kept, as
+   Phase 7 advised. `RouteParityTest` pins the absence structurally.
+
+### Smaller things
+
+- **`public/favicon.ico` was a 0-byte file** — on the plan's "fix explicitly
+  during the port" list and never done. Rebuilt at 16/32/48px from
+  `public/the-bridge-logo.png` and declared on the panel with `->favicon()`, so
+  the page emits a link tag rather than relying on the browser's implicit
+  request.
+- **`.env.example`'s `APP_URL` still said port 3000**, the Express default.
+  Now `8080`, matching `BRIDGE_PORT`.
+- **`bootstrap/providers.php`** — the Pint failure carried since Phase 0 is
+  fixed. Pint is now clean across the whole tree.
+- **Roughly 80 files cite `reference/...` paths in docblocks.** Left alone
+  deliberately: they are the provenance of nearly every non-obvious decision
+  here, and the Express original is still on `main` (`git show
+  main:src/routes/apps.ts`). "Resuming work" at the top of this file records how
+  to read one.
+
+### State at handoff
+
+Phase 8 is complete, and so is the port.
+
+| | |
+|---|---|
+| Branch | `laravel-port`, worktree `../the-bridge-laravel` |
+| Suite | 477 tests / 1386 assertions, green (fixed + seeds 1, 4242, 31337) |
+| Pint | clean |
+| Phase 7 | committed as `3f9627a` |
+
+Touched by this phase — 9 modified, 2 new, 2 deleted (plus `reference/`):
+
+```
+M .dockerignore                             reference/ gone, my-app explained
+M .env.example                              APP_URL port
+M README.md                                 rewritten for the Laravel app
+M app/Filament/Actions/RollbackAction.php   dead guard deleted, docblock corrected
+M app/Jobs/PollHealthChecks.php             two chain-lifetime facts, stale test name
+M app/Providers/Filament/AdminPanelProvider.php   ->favicon()
+M bootstrap/providers.php                   the Phase 0 Pint failure
+M docker/entrypoint.sh                      first-boot cache fix, health-chain clear
+M docker/supervisord.conf                   stale test name
+M public/favicon.ico                        0 bytes → a real icon
++ tests/Feature/RouteParityTest.php
++ tests/Feature/LcarsThemeTest.php
+E tests/Feature/Packaging/PackagingConfigTest.php  parsed configs, sh -n, new pairs
+E tests/Feature/Filament/PanelSmokeTest.php        the three page GETs
+E tests/Feature/Filament/DeploymentResourceTest.php  the stale-rollback test
+E tests/Feature/PollHealthCommandTest.php         queue:clear behaviour
+- public/theme.js
+- reference/                                 62 files
+```
+
+**The local environment was returned to empty** — containers down, `data/` and
+`repos/bridge-test-app` removed, the fixture's own compose project torn down.
+`.env` keeps `BRIDGE_PORT=8080` and `DOCKER_SOCK=…/.docker/run/docker.sock`;
+it is gitignored and re-running the containerised check needs them.
+
+### If there is a Phase 9
+
+There is no planned work left. The three things most worth knowing before
+opening this again:
+
+- **Nothing in CI proves the image.** The packaging tests read and parse
+  `docker/`; only `sh -n` executes anything. The build, the socket, the GID
+  match and a real deploy are hand-checked — recipe under Phase 7's "Re-running
+  the containerised check", which is still current apart from the fixture's
+  `health_url` needing `host.docker.internal`.
+- **A Dusk suite is the one real coverage gap.** Phase 6's list of what PHPUnit
+  cannot see (the `wire:ignore` log box, `textContent` vs `innerHTML`,
+  auto-scroll) is unchanged.
+- **Deploy concurrency must stay at 1** while `retry_after` is 90. That
+  invariant now has three separate warnings pointing at it and no enforcement
+  beyond a test that counts workers.
 
 ## Parity acceptance
+
+All **115** reference cases and where each landed. `reference/` was deleted in
+Phase 8, so this table is the record: the originals are readable with
+`git show main:tests/Feature/apiDeploy.test.ts` and friends.
+
+| Reference file | Cases | Ported to |
+|---|---|---|
+| `tests/Feature/apiDeploy.test.ts` | 9 | `Feature/Api/ApiDeployTest` (auth ladder, 202 + dispatch, 404s, apps index, deployment JSON, log slice + header trio) |
+| `tests/Feature/apiOpenapi.test.ts` | 4 | `Feature/Api/ApiOpenApiTest` |
+| `tests/Feature/appCrud.test.ts` | 12 | `Filament/PanelSmokeTest` (the four page GETs), `Filament/CreateAppTest` (create, validation, skip_clone, `.env` seeding), `Filament/EditAppTest` (update), `Filament/AppActionsTest` (delete) |
+| `tests/Feature/containerStatus.test.ts` | 2 | `Feature/ParityRoutesTest::test_containers_*` |
+| `tests/Feature/deployTrigger.test.ts` | 1 | `Filament/AppActionsTest::test_the_deploy_action_creates_a_pending_deployment_dispatches_it_and_redirects_to_it` |
+| `tests/Feature/envEditor.test.ts` | 2 | `Filament/AppActionsTest::test_the_env_editor_*`, plus `ParityRoutesTest::test_env_post_*` |
+| `tests/Feature/migration.test.ts` | 3 | `Feature/MigrationTest::test_{apps,deployments,jobs}_table_has_correct_columns` |
+| `tests/Feature/rollback.test.ts` | 2 | `Filament/DeploymentResourceTest::test_rolling_back_creates_a_new_deployment_carrying_the_source_commit_sha`, `ParityRoutesTest::test_rollback_returns_400_when_the_source_deployment_has_no_commit_sha` |
+| `tests/Feature/settings.test.ts` | 2 | `Filament/SettingsPageTest` (load, save) |
+| `tests/Feature/sseStream.test.ts` | 2 | replaced by polling — see below |
+| `tests/Feature/webhooks.test.ts` | 4 | `Feature/WebhooksTest` (204, 401, branch mismatch, 400 no secret) |
+| `tests/Unit/deployApp.test.ts` | 8 | `Unit/DeployAppTest` (success, compose failure, `commit_sha`, `rollback_sha`, pre-flight, one auto-rollback, loop guard, no prior success) |
+| `tests/Unit/enums.test.ts` | 2 | `Unit/EnumsTest` |
+| `tests/Unit/gitService.test.ts` | 3 | `Unit/Services/GitServiceTest` (clone ok, clone throws, pull) |
+| `tests/Unit/healthCheck.test.ts` | 3 | `Unit/HealthCheckModelTest` — 2 of 3; `consecutiveFailures` deliberately dropped (see below) |
+| `tests/Unit/healthPoller.test.ts` | 3 | `Unit/Services/HealthPollerTest` (records up, records down, skips no `health_url`) |
+| `tests/Unit/models.test.ts` | 12 | `Unit/AppModelTest` (7) + `Unit/DeploymentModelTest` (5) |
+| `tests/Unit/slackNotifier.test.ts` | 2 | `Unit/Services/SlackNotifierTest` |
+| `src/services/deploySteps.test.ts` | 24 | `Unit/Services/DeployStepsTest` — 24, name for name |
+| `src/services/portBindings.test.ts` | 15 | `Unit/Services/PortBindingsTest` — 32, a strict superset |
+
+**`consecutiveFailures` is the one case with no ported test**, and that is the
+plan's own instruction: it has zero callers in the reference and the defect list
+says "drop unless a use is planned". Phase 1 dropped the method, so the test has
+no subject. Everything else maps.
+
+The original wording of this section, kept because it is the contract:
 
 `reference/tests/` and `reference/src/services/*.test.ts` hold **115 cases**.
 They are the behavioural contract for this port — every one should map to a

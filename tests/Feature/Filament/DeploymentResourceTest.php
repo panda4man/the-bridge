@@ -154,6 +154,29 @@ class DeploymentResourceTest extends TestCase
             ->assertActionVisible('rollback');
     }
 
+    public function test_rolling_back_a_deployment_whose_sha_was_cleared_since_the_page_rendered_does_nothing(): void
+    {
+        $source = $this->makeDeployment([
+            'commit_sha' => 'abc123def456abc123def456abc123def456abc1',
+        ]);
+
+        $page = Livewire::test(ViewDeployment::class, ['record' => $source->getRouteKey()]);
+
+        // The row changes between the render that drew the button and the
+        // click that submits it. Phase 8 deleted RollbackAction's in-action
+        // refusal for this case after proving it could not fire; this pins
+        // the mechanism that actually does the work — visible(), re-evaluated
+        // at callMountedAction() against a freshly-loaded record.
+        $source->forceFill(['commit_sha' => null])->save();
+
+        $page->callAction('rollback');
+
+        // No rollback deployment created, and nothing queued to check out a
+        // null SHA.
+        $this->assertSame(1, Deployment::query()->count());
+        Bus::assertNothingDispatched();
+    }
+
     public function test_rollback_targets_the_app_the_source_deployment_belongs_to(): void
     {
         $otherApp = App::factory()->create(['name' => 'Other', 'path' => '/repos/other']);

@@ -28,10 +28,13 @@
 /.mcp.json
 /auth.json
 
-# The Express original, kept as the behavioural specification until Phase 8.
-# Not part of the running application.
-/reference
+# The MCP server for this API. Its own package, deployed separately; nothing
+# in the image imports it. (`/reference`, the Express original, lived here too
+# until Phase 8 deleted it — it is still readable on the `main` branch.)
 /bridge-mcp
+
+# A checkout the Filament create-app tests leave at the repository root when
+# BRIDGE_REPOS_PATH resolves relative to it. Scratch, never application code.
 /my-app
 
 # Not needed at runtime.

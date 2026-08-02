@@ -42,9 +42,25 @@ use Illuminate\Foundation\Queue\Queueable;
  * The failure mode the Phase 3 note warned about is real: if supervisord's
  * health worker is started with a `--queue` that does not match self::QUEUE,
  * this job is enqueued forever and never run, and ALL health polling stops
- * silently. tests/Feature/Packaging/SupervisordConfigTest.php reads
+ * silently. tests/Feature/Packaging/PackagingConfigTest.php reads
  * docker/supervisord.conf and asserts the two agree, so the drift cannot
  * land green.
+ *
+ * Two chain-lifetime facts, both found by Phase 8's QC of the packaging:
+ *
+ * 1. The delayed successor is a row in the database queue, which lives on the
+ *    /data volume and OUTLIVES the container. The entrypoint therefore runs
+ *    `queue:clear --queue=health` immediately before its kickoff; without it
+ *    each restart ADDS a chain (reproduced: one stop/start, two pending health
+ *    jobs) and nothing anywhere reports the doubling.
+ * 2. If the health worker is SIGKILLed mid-tick, the `finally` below never
+ *    runs, and the reserved job becomes visible again after `retry_after`
+ *    only to be failed immediately by `--tries=1` — so that chain is gone
+ *    until the next container start re-kicks it. This is accepted rather than
+ *    fixed: a `failed()` hook that re-dispatches would fork the chain in two
+ *    on every ordinary throw, which is the exact hazard `--tries=1` exists to
+ *    prevent. A missing health chain shows as health checks stopping; a forked
+ *    one silently doubles forever.
  *
  * The re-dispatch lives in `finally`, not at the end of a happy path — this
  * is the single most important line in the class. An uncaught throw here is
@@ -68,8 +84,8 @@ class PollHealthChecks implements ShouldQueue
 
     /**
      * Queue name. Read by docker/supervisord.conf's `health-worker` program
-     * and pinned against it by SupervisordConfigTest — do not rename one
-     * without the other. See the class docblock.
+     * and pinned against it by PackagingConfigTest — do not rename one without
+     * the other. See the class docblock.
      */
     public const QUEUE = 'health';
 

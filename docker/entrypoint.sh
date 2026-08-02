@@ -123,10 +123,24 @@ fi
 # then read the OLD environment — including DB_DATABASE, which would migrate
 # and seed the wrong file. Discard it before anything reads config; it is
 # rebuilt from the current environment at the end of this script.
-php artisan optimize:clear --no-ansi >/dev/null
+#
+# NOT `optimize:clear`, which also runs `cache:clear`. CACHE_STORE is
+# `database`, so clearing the application cache is a DELETE against a table
+# that does not exist yet on a first boot — the command throws, `set -e` stops
+# the script, and the container restart-loops with "no such table: cache"
+# before it has ever migrated. Only the file-backed caches can be stale here
+# anyway; the database-backed one is cleared below, once its table exists.
+for cache in config route view event; do
+    php artisan "${cache}:clear" --no-ansi >/dev/null
+done
 
 info "running migrations"
 php artisan migrate --force --no-ansi
+
+# Now that the cache table exists. Nothing in this application depends on the
+# application cache surviving a boot, and a value cached against the previous
+# boot's configuration is exactly what this whole section exists to discard.
+php artisan cache:clear --no-ansi >/dev/null
 
 # Creates the first panel user from BRIDGE_ADMIN_EMAIL / BRIDGE_ADMIN_PASSWORD.
 # firstOrCreate, so a password changed through the UI is not reverted; warns
@@ -151,6 +165,19 @@ php artisan optimize --no-ansi
 # --------------------------------------------------------------------------
 # 6. Health poll chain
 # --------------------------------------------------------------------------
+# The chain is self-perpetuating: each tick re-dispatches its successor with a
+# 60-second delay. That successor is a row in the database queue, which lives
+# in /data and therefore SURVIVES the container. Kicking off a new chain on top
+# of it means two chains, and one more on every subsequent restart — doubling
+# health-check request volume and HealthCheck rows with nothing anywhere
+# reporting it. (Verified in Phase 8: one stop/start, two pending health jobs.)
+#
+# The `health` queue carries nothing but this chain, so clearing it is exactly
+# "cancel the old chain" and cannot discard a deploy — those are on `default`
+# and must never be cleared here.
+info "clearing any health chain left by a previous container"
+php artisan queue:clear --queue=health --force --no-ansi >/dev/null
+
 # Dispatches the FIRST tick of the self-rescheduling PollHealthChecks chain,
 # which then re-dispatches itself forever. Exactly once per container start —
 # there is no internal duplicate-kickoff guard, and two invocations mean two
