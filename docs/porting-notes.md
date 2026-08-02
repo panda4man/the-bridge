@@ -11,7 +11,7 @@ have to re-derive.
 | Phase plan | `~/.claude/plans/sorted-marinating-goose.md` |
 | Phase tracking | The task list — each task carries its own QC notes |
 | Specification | the Express original — **deleted from this branch in Phase 8** |
-| Branch | `laravel-port`, in a worktree at `../the-bridge-laravel` |
+| Branch | `main`. Built on `laravel-port` in a worktree; both were retired at the cutover — see below |
 
 `reference/` held the original Express app and was the source of truth for
 behaviour through Phases 1–7. Phase 8 deleted it, as planned. Roughly 80 files
@@ -2956,3 +2956,43 @@ mechanism this port does not use:
   polling equivalent of closing the stream is ceasing to ask.
 
 (The reference README claims 35 tests. That is stale.)
+
+## Cutover — the port became `main` (2026-08-02)
+
+Done immediately after Phase 8, and outside the plan, which never covered it.
+
+`laravel-port` descended from `main` (`d08d36f`'s parent is `1a55ec4`), so this
+was a fast-forward: no force-push, no rewritten history, and every Express
+commit is still an ancestor of the current `main`.
+
+| Was | Is |
+|---|---|
+| `main` — the Express app | `v1-express`, local and on `origin` |
+| `laravel-port` — the port | `main`, `origin/main` fast-forwarded `1a55ec4..b382a4f` |
+| `/the-bridge` (primary, Express) | `/the-bridge` — **the Laravel app** |
+| `/the-bridge-laravel` (worktree) | removed |
+
+GitHub's default branch was already `main` and did not need changing; it now
+serves the Laravel application. The temporary `origin/laravel-port` pushed as a
+backup before the rename was deleted once `main` was published.
+
+Consequences worth knowing:
+
+- **Docblock citations of `reference/...` still resolve**, now through
+  `git show v1-express:src/routes/apps.ts` as well as
+  `git show ea4d6f2:reference/src/routes/apps.ts`. "Resuming work" at the top of
+  this file has the recipe; only the branch name changed.
+- **Every "State at handoff" table below says `laravel-port`, worktree
+  `../the-bridge-laravel`.** Those are historical records of where each phase
+  was built and were deliberately left alone. The live location is the primary
+  checkout.
+- `.env` moved with the swap and its three absolute paths were rewritten to
+  `/the-bridge` (`DB_DATABASE`, `BRIDGE_REPOS_PATH`, `BRIDGE_SSH_KEY_PATH`).
+  The local dev SQLite database came across with it, so the panel admin still
+  exists. `vendor/`, `node_modules/` and `public/build` were rebuilt in place.
+- **`bridge.db`, `bridge.db-shm` and `bridge.db-wal` are still in the repository
+  root.** They are the *Express* application's live SQLite database, untracked
+  and gitignored, and predate the cutover. Nothing in the Laravel app reads them
+  — it uses `database/database.sqlite` locally and `/data/bridge.sqlite` in the
+  container. Left in place rather than deleted, because they are the only copy
+  of the old app's data.
