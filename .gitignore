@@ -1,8 +1,12 @@
 *.log
 .DS_Store
 .env
-.env.backup
-.env.production
+# Every .env variant, not the three the Laravel skeleton happened to list.
+# `.env.express` — the retired Express app's real configuration, kept after the
+# 2026-08-02 cutover — carries SESSION_SECRET, and matching it by name alone
+# would leave the next variant someone creates untracked-but-committable.
+.env.*
+!.env.example
 .phpactor.json
 .phpunit.result.cache
 /.codex
