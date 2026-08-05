@@ -168,7 +168,8 @@ def render_action(slug: str) -> str:
 
 **Response:** {spec['response']}
 
-**Example:**
+**Example (reference only — describes the underlying HTTP contract; call the
+matching MCP tool, don't run this):**
 
     {curl}
 
