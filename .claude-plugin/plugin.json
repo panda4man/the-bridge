@@ -1,0 +1,9 @@
+{
+  "name": "the-bridge",
+  "description": "Deploy and monitor apps managed by the-bridge, via the bridge-api-guide MCP tools.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Andrew Clinton",
+    "url": "https://github.com/panda4man"
+  }
+}

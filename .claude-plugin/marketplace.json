@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "the-bridge",
+  "description": "Deployment interface for the-bridge, the Docker deployment manager running on Unraid.",
+  "owner": {
+    "name": "Andrew Clinton",
+    "url": "https://github.com/panda4man"
+  },
+  "plugins": [
+    {
+      "name": "the-bridge",
+      "description": "Deploy and monitor apps managed by the-bridge, via the bridge-api-guide MCP tools.",
+      "source": "./",
+      "category": "deployment"
+    }
+  ]
+}
