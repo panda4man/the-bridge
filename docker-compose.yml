@@ -51,6 +51,11 @@ services:
       # runs anywhere but your laptop.
       APP_URL: ${APP_URL:-http://localhost:${BRIDGE_PORT:-8080}}
 
+      # Container-side path only — this is read inside the container, not
+      # bind-mounted like BRIDGE_REPOS_PATH, so the value must live under
+      # /data (see .env.example) regardless of the host's layout.
+      BRIDGE_SSH_KEY_PATH: ${BRIDGE_SSH_KEY_PATH:-/data/ssh/id_rsa}
+
       LOG_CHANNEL: stderr
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
@@ -68,12 +73,6 @@ services:
       DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-90}
 
       BRIDGE_REPOS_PATH: ${BRIDGE_REPOS_PATH}
-      # Deliberately NOT interpolated from .env. Unlike BRIDGE_REPOS_PATH —
-      # which must be the host path, because apps.path is resolved on both
-      # sides — the key is only ever read inside the container, and a
-      # developer .env points it at a host directory that does not exist here.
-      # The entrypoint creates and locks down /data/ssh; put the key there.
-      BRIDGE_SSH_KEY_PATH: /data/ssh/id_rsa
       # Auth FAILS CLOSED. Empty here and no `api_token` row in settings means
       # /api returns 503 to every caller — it does not mean the API is public.
       BRIDGE_API_TOKEN: ${BRIDGE_API_TOKEN:-}
