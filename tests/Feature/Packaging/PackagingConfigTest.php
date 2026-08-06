@@ -488,6 +488,24 @@ class PackagingConfigTest extends TestCase
         $this->assertMatchesRegularExpression('/^!\.env\.example$/m', $dockerignore);
     }
 
+    public function test_the_ssh_key_path_is_read_from_dot_env_not_hardcoded(): void
+    {
+        // A key file named anything other than the hardcoded default (e.g. an
+        // ed25519 key placed at /data/ssh/id_ed25519, matching BRIDGE_SSH_KEY_PATH
+        // in .env) left GitService::envFor() unable to find it, so
+        // GIT_SSH_COMMAND was never set and git fell back to real host-key
+        // checking — which fails non-interactively with "Host key verification
+        // failed" even though the operator's .env was correct all along.
+        $service = $this->composeTree();
+
+        $this->assertStringContainsString(
+            '${BRIDGE_SSH_KEY_PATH',
+            $service['environment']['BRIDGE_SSH_KEY_PATH'] ?? '',
+            'BRIDGE_SSH_KEY_PATH must be interpolated from .env, not hardcoded — '
+            .'an operator with a key at a different path has no way to override it otherwise.',
+        );
+    }
+
     private function durationToSeconds(string $duration): int
     {
         // Compose's Go duration syntax, restricted to what is usable here.
