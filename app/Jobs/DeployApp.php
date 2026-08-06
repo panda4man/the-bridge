@@ -22,7 +22,7 @@ use Throwable;
  *
  * A failed deploy is a successful job: the catch block in handle() records
  * the failure on the Deployment/App rows and never rethrows. $tries only
- * matters for the two "not found" throws at the top of handle() — those are
+ * matters for the two "not found" throws at the top of handle(). Those are
  * the ONLY errors allowed to escape this method and reach Laravel's queue
  * retry mechanism. Rethrowing a mid-pipeline failure would make the worker
  * re-run (and re-log, and re-notify, and re-auto-rollback) the entire deploy
@@ -30,7 +30,7 @@ use Throwable;
  *
  * The reference injects `composeRunner`/`execStep` closures so its tests can
  * swap in a mock without touching the real spawn() call. This port has no
- * equivalent constructor option — it fakes one level lower, at
+ * equivalent constructor option: it fakes one level lower, at
  * App\Services\Process\ProcessRunner (the same seam GitService and
  * ContainerStatus already use), via the container. That means tests using
  * Tests\Support\FakeProcessRunner see the exact `docker compose ...` argv
@@ -38,15 +38,15 @@ use Throwable;
  *
  * Every process invocation in the build phase (git pull/checkout, docker
  * compose pull/down/up, docker compose exec) goes through
- * ProcessRunner::run() with `idleTimeout` set and `timeout: null` — a stall
+ * ProcessRunner::run() with `idleTimeout` set and `timeout: null`. A stall
  * (no output for the idle window) comes back as a well-formed ProcessResult
  * with `timedOut = true`, never a thrown exception (see
  * App\Services\Process\ProcessRunner's docblock). This job treats a stall
  * exactly like a non-zero exit: it logs the reference's stall message and
  * feeds exit code 1 into the same 3-attempt retry loop compose failures use.
  *
- * Never reads ProcessResult->output for the streaming compose/exec calls —
- * only the short git rev-parse/log calls (via GitService) do that. Log
+ * Never reads ProcessResult->output for the streaming compose/exec calls.
+ * Only the short git rev-parse/log calls (via GitService) do that. Log
  * persistence for the long-running steps happens exclusively through the
  * $onOutput callback into Deployment::appendLog(), so a 40-minute build's
  * output never has to sit twice in worker memory.
@@ -66,8 +66,8 @@ class DeployApp implements ShouldQueue
      * `docker compose up -d --build` can run far longer than that, so the
      * timeout is disabled here.
      *
-     * This property alone IS sufficient — corrected in Phase 6 after reading
-     * the worker rather than assuming. `Worker::timeoutForJob()` is
+     * This property alone IS sufficient. Corrected in Phase 6 after reading
+     * the worker rather than assuming: `Worker::timeoutForJob()` is
      * `$job->timeout() !== null ? $job->timeout() : $options->timeout`, and
      * `Queue::createPayloadArray()` carries this property into the payload, so
      * a job that declares a timeout wins over whatever `queue:work --timeout`
@@ -75,7 +75,7 @@ class DeployApp implements ShouldQueue
      * anyway is harmless and self-documenting).
      *
      * The setting that CAN still cut a long deploy short is `retry_after` on
-     * the queue connection, which is a different mechanism — see
+     * the queue connection, which is a different mechanism. See
      * docs/porting-notes.md, Phase 6's handoff notes.
      */
     public $timeout = 0;
@@ -86,8 +86,8 @@ class DeployApp implements ShouldQueue
      * GitService, ContainerStatus, and ProcessRunner are all resolved by the
      * container (queue worker, or a direct app()->call([$job, 'handle']) in
      * tests). GitService/ContainerStatus each take a ProcessRunner via their
-     * own constructor, itself resolved from the same container binding —
-     * binding Tests\Support\FakeProcessRunner as that singleton in a test
+     * own constructor, itself resolved from the same container binding.
+     * Binding Tests\Support\FakeProcessRunner as that singleton in a test
      * makes every shell-out this job performs, directly or through those two
      * services, observable without a real git remote or Docker daemon.
      */
@@ -234,7 +234,7 @@ class DeployApp implements ShouldQueue
             explode(' ', $subCmd),
         );
 
-        $env = array_merge(['DOCKER_PROGRESS' => 'plain'], $this->sshEnv());
+        $env = $this->isolatedEnv(array_merge(['DOCKER_PROGRESS' => 'plain'], $this->sshEnv()));
         $idleTimeout = str_starts_with($subCmd, 'pull') ? 60.0 : 300.0;
 
         try {
@@ -279,7 +279,7 @@ class DeployApp implements ShouldQueue
             $result = $runner->run(
                 $command,
                 $workDir,
-                $this->sshEnv(),
+                $this->isolatedEnv($this->sshEnv()),
                 timeout: null,
                 idleTimeout: 60.0,
                 onOutput: static function (string $type, string $chunk) use ($dep): void {
@@ -305,6 +305,44 @@ class DeployApp implements ShouldQueue
     }
 
     /**
+     * The only vars a compose/exec subprocess may inherit unmodified from
+     * the-bridge's own process environment: PATH (to find the docker
+     * binary) and HOME (docker's own config/credential lookups).
+     *
+     * @var list<string>
+     */
+    private const array ENV_INHERIT_ALLOWLIST = ['PATH', 'HOME'];
+
+    /**
+     * Blocks every var the-bridge's own environment carries (chiefly
+     * APP_NAME from its own .env, loaded into the real process env by
+     * phpdotenv's putenv adapter) from leaking into the child docker
+     * compose/exec subprocess.
+     *
+     * Symfony Process merges the $env passed to it ON TOP of the full
+     * inherited environment; it does not replace it (see ProcessRunner's
+     * docblock). Without this, a real process env var set here beats
+     * docker compose's own ${VAR} interpolation against the TARGET stack's
+     * .env file: a deployed app's own
+     * `MAIL_FROM_NAME="${APP_NAME}"` silently resolves to "The Bridge".
+     *
+     * Symfony Process offers no "start from empty, allowlist these keys"
+     * mode. The only way to stop a var from being inherited is to
+     * explicitly set it to `false` in $env, which is what this does for
+     * every currently-inherited key not on ENV_INHERIT_ALLOWLIST or
+     * already present in $overrides.
+     *
+     * @param  array<string, string>  $overrides
+     * @return array<string, string|false>
+     */
+    private function isolatedEnv(array $overrides): array
+    {
+        $blocked = array_diff(array_keys(getenv()), self::ENV_INHERIT_ALLOWLIST, array_keys($overrides));
+
+        return array_merge(array_fill_keys($blocked, false), $overrides);
+    }
+
+    /**
      * Same resolution + existence-guard as GitService::envFor() (Phase 2),
      * duplicated rather than shared: this is a compose/exec-argv concern,
      * not a git one, and GitService's version is private to that class.
@@ -325,7 +363,7 @@ class DeployApp implements ShouldQueue
     }
 
     /**
-     * Guarded by `if (! $dep->rollback_sha)` — a deployment that is ITSELF a
+     * Guarded by `if (! $dep->rollback_sha)`: a deployment that is ITSELF a
      * rollback never chains another one. Without this guard a rollback that
      * fails would enqueue a rollback of a rollback, indefinitely.
      */
@@ -354,7 +392,7 @@ class DeployApp implements ShouldQueue
 
     /**
      * Slack is fire-and-forget. SlackNotifier::notify() throwing must never
-     * fail the deploy — and, since this is also called from the catch block
+     * fail the deploy, and since this is also called from the catch block
      * ahead of autoRollback(), it must never prevent the auto-rollback that
      * follows it either.
      */

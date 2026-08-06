@@ -22,14 +22,14 @@ use Tests\TestCase;
 
 /**
  * Ported from reference/tests/Unit/deployApp.test.ts (8 cases). The
- * reference clones a real public GitHub repo and shells real git/docker —
- * per this port's testability requirement (no network, no real git remote,
+ * reference clones a real public GitHub repo and shells real git/docker.
+ * Per this port's testability requirement (no network, no real git remote,
  * no real docker), every case here drives App\Services\Process\ProcessRunner
  * via Tests\Support\FakeProcessRunner instead, bound into the container so
  * DeployApp, GitService, and ContainerStatus all see the same fake.
  *
  * The job is invoked with `app()->call([new DeployApp($id), 'handle'])`
- * rather than `DeployApp::dispatch($id)` in every test — deliberately.
+ * rather than `DeployApp::dispatch($id)` in every test, deliberately.
  * QUEUE_CONNECTION is `sync` in phpunit.xml, so a real ::dispatch() call
  * runs synchronously in-process; calling handle() directly instead means
  * the ONLY place a nested dispatch can happen is the auto-rollback's
@@ -85,8 +85,8 @@ class DeployAppTest extends TestCase
     }
 
     /**
-     * Creates an App backed by a REAL temp directory containing bridge.yml —
-     * needed only for the handful of tests proving DeploySteps::resolve()'s
+     * Creates an App backed by a REAL temp directory containing bridge.yml.
+     * Needed only for the handful of tests proving DeploySteps::resolve()'s
      * "source: repo" branch, since App::path in every other test is a
      * synthetic, non-existent path (DeploySteps::resolve()'s file_exists()
      * check on it is harmlessly false, and nothing else in the job touches
@@ -110,7 +110,7 @@ class DeployAppTest extends TestCase
     /**
      * Queues the four calls GitService::pull() makes when the working copy
      * is already checked out on the target branch (config, fetch,
-     * rev-parse, pull) — the common case, since App::factory() defaults
+     * rev-parse, pull): the common case, since App::factory() defaults
      * branch to 'main' and this queues rev-parse's answer to match.
      */
     private function queueGitPull(FakeProcessRunner $runner, string $branch = 'main', string $pullOutput = 'Already up to date.'): FakeProcessRunner
@@ -123,7 +123,7 @@ class DeployAppTest extends TestCase
     }
 
     /**
-     * Queues the two short git calls runGitPhase() makes after pulling —
+     * Queues the two short git calls runGitPhase() makes after pulling:
      * `git rev-parse HEAD` and `git log -1 --format=%s`.
      *
      * Answers off the ARGV, not positionally (QC round 2, finding 1). A pair
@@ -134,7 +134,7 @@ class DeployAppTest extends TestCase
      *
      * apart from the same two assignments swapped: swapping them also swaps
      * which response is dequeued first, so both columns still receive the
-     * right value and the suite stays green. That mutant is not cosmetic —
+     * right value and the suite stays green. That mutant is not cosmetic:
      * a commit SUBJECT in commit_sha is what autoRollback() would later hand
      * to `git checkout`. Answering off the argv makes the swap observable,
      * and fail()ing on anything else pins that the queue is aligned with the
@@ -242,7 +242,7 @@ class DeployAppTest extends TestCase
     /**
      * B1 (QC fix round): hoisting `$success = false;` out of the
      * `foreach (['pull', 'down', 'up ...'] as $subCmd)` loop survives the
-     * full suite — once `pull` succeeds the flag stays `true`, so `down`/
+     * full suite. Once `pull` succeeds the flag stays `true`, so `down`/
      * `up` failing all 3 attempts still reports the deploy `successful`.
      * Every previously-existing failure test failed on `pull`, the FIRST
      * sub-command, so `{$subCmd}` in the thrown message was only ever
@@ -337,7 +337,7 @@ class DeployAppTest extends TestCase
 
     /**
      * QC round 2, finding 5: deleting the `$dep->save()` at the end of
-     * runGitPhase() survives the whole suite — commit_sha/commit_message
+     * runGitPhase() survives the whole suite. commit_sha/commit_message
      * stay dirty on the model and are flushed by the later save() on either
      * the success or the catch path, so the final row looks identical.
      *
@@ -345,7 +345,7 @@ class DeployAppTest extends TestCase
      * persists the SHA IMMEDIATELY, before the compose phase, and
      * $timeout = 0 exists precisely so that phase can run for 40 minutes.
      * Under the mutant deployments.commit_sha stays NULL for that entire
-     * window — Phase 5/6's live polling would show no commit for the whole
+     * window: Phase 5/6's live polling would show no commit for the whole
      * build, and a worker killed mid-compose loses the SHA outright.
      */
     public function test_commit_sha_and_message_are_persisted_before_the_compose_phase_starts(): void
@@ -378,7 +378,7 @@ class DeployAppTest extends TestCase
 
     /**
      * QC round 2, finding 2: every compose failure in this file is exit code
-     * 1 — `queueFailure(1, ...)` or a stall, which also reports 1. That
+     * 1: `queueFailure(1, ...)` or a stall, which also reports 1. That
      * leaves `if ($exit === 0)` indistinguishable from `if ($exit !== 1)`,
      * and `return $result->exitCode;` indistinguishable from
      * `return $result->exitCode === 0 ? 0 : 1;`; both mutants stay green.
@@ -416,14 +416,14 @@ class DeployAppTest extends TestCase
      * QC round 2, finding 3: every throwable driven through handle() in this
      * file is a RuntimeException, so `catch (Throwable $e)` at
      * DeployApp::handle() and `catch (RuntimeException $e)` are
-     * indistinguishable — the narrower mutant stays green.
+     * indistinguishable: the narrower mutant stays green.
      *
      * The class docblock claims the two "not found" throws are the ONLY
      * errors allowed to escape handle(). Under the mutant an Error (a
      * TypeError from a bad cast, say) escapes instead: the deployment is
      * left stuck in `running` with no failure recorded, and $tries = 3
-     * re-runs the ENTIRE deploy — re-logging, re-notifying,
-     * re-auto-rolling-back — three times. Exactly what the docblock says
+     * re-runs the ENTIRE deploy (re-logging, re-notifying,
+     * re-auto-rolling-back) three times. Exactly what the docblock says
      * must never happen.
      *
      * The Error is queued at GitService::pull()'s first call (`git config
@@ -558,7 +558,7 @@ class DeployAppTest extends TestCase
     // --- Reference case 7: loop guard (already-a-rollback deploy) ---
 
     /**
-     * A prior successful deployment MUST exist here — without one,
+     * A prior successful deployment MUST exist here. Without one,
      * findLastSuccessful() returns null regardless of the guard, and this
      * test could not tell "guard correctly skipped auto-rollback" apart
      * from "guard was deleted, but there was nothing to roll back to
@@ -567,7 +567,7 @@ class DeployAppTest extends TestCase
      * }` guard in DeployApp::autoRollback() makes this test fail (a second
      * rollback deployment gets created); restoring the guard brings it back
      * to green. Without the prior successful deployment, the same deleted
-     * guard left this test passing — that was the actual gap this docblock
+     * guard left this test passing: that was the actual gap this docblock
      * exists to flag.
      */
     public function test_rollback_deploy_does_not_enqueue_another_rollback_loop_guard(): void
@@ -648,7 +648,7 @@ class DeployAppTest extends TestCase
      * is inserted (and thus given a higher id) AFTER appA's own success, so
      * an app_id filter that was accidentally dropped from
      * Deployment::findLastSuccessful() would make this pick appB's SHA
-     * instead of appA's — verified by mutation, see the phase report.
+     * instead of appA's. Verified by mutation, see the phase report.
      */
     public function test_auto_rollback_only_considers_the_failing_apps_own_deployment_history(): void
     {
@@ -824,7 +824,8 @@ class DeployAppTest extends TestCase
             foreach ($composeCalls as $call) {
                 $this->assertSame($app->path, $call['cwd']);
                 $this->assertNull($call['timeout']);
-                $this->assertSame(['DOCKER_PROGRESS' => 'plain', 'GIT_SSH_COMMAND' => $sshCommand], $call['env']);
+                $this->assertSame('plain', $call['env']['DOCKER_PROGRESS']);
+                $this->assertSame($sshCommand, $call['env']['GIT_SSH_COMMAND']);
             }
 
             $this->assertSame(60.0, $composeCalls[0]['idleTimeout']);
@@ -851,7 +852,7 @@ class DeployAppTest extends TestCase
 
         $composeCalls = array_values(array_filter($runner->calls, static fn (array $c) => ($c['command'][0] ?? null) === 'docker'));
         foreach ($composeCalls as $call) {
-            $this->assertSame(['DOCKER_PROGRESS' => 'plain'], $call['env']);
+            $this->assertSame('plain', $call['env']['DOCKER_PROGRESS']);
             $this->assertArrayNotHasKey('GIT_SSH_COMMAND', $call['env']);
         }
     }
@@ -887,7 +888,7 @@ class DeployAppTest extends TestCase
             $this->assertSame($app->path, $execCall['cwd']);
             $this->assertNull($execCall['timeout']);
             $this->assertSame(60.0, $execCall['idleTimeout']);
-            $this->assertSame(['GIT_SSH_COMMAND' => $sshCommand], $execCall['env']);
+            $this->assertSame($sshCommand, $execCall['env']['GIT_SSH_COMMAND']);
             $this->assertArrayNotHasKey('DOCKER_PROGRESS', $execCall['env']);
         } finally {
             unlink($keyPath);
@@ -911,7 +912,87 @@ class DeployAppTest extends TestCase
         $this->runHandle($dep->id);
 
         $execCall = $runner->calls[array_key_last($runner->calls)];
-        $this->assertSame([], $execCall['env']);
+        $this->assertArrayNotHasKey('GIT_SSH_COMMAND', $execCall['env']);
+        $this->assertArrayNotHasKey('DOCKER_PROGRESS', $execCall['env']);
+        $this->assertArrayNotHasKey('PATH', $execCall['env']);
+    }
+
+    // --- The-bridge's own inherited env vars must never leak into a
+    // deployed app's compose/exec subprocess. Root cause: Symfony Process
+    // merges the caller's $env ON TOP OF the full inherited environment
+    // (see ProcessRunner's docblock) — the-bridge's own APP_NAME="The
+    // Bridge" (loaded into the real process env by phpdotenv's putenv
+    // adapter, .env:1) was reaching every `docker compose` subprocess this
+    // job spawns. `docker compose`'s ${VAR} interpolation prefers a real
+    // process env var over the target stack's OWN .env file, so a deployed
+    // app's `MAIL_FROM_NAME="${APP_NAME}"` silently resolved to "The
+    // Bridge" instead of that app's own APP_NAME.
+
+    public function test_compose_env_blocks_the_bridges_own_inherited_vars_but_keeps_path_and_overrides(): void
+    {
+        putenv('BRIDGE_ENV_LEAK_PROBE=leaky-value');
+        $this->assertNotFalse(getenv('PATH'), 'This test requires PATH to be set in the running process.');
+
+        try {
+            $app = $this->makeApp();
+            $dep = Deployment::create(['app_id' => $app->id, 'status' => DeploymentStatus::Pending]);
+
+            $runner = $this->bindRunner();
+            $this->queueGitPull($runner);
+            $this->queueCommitCapture($runner, 'aabbccddee112233445566778899aabbccddee11', 'Fix the thing');
+            $runner->queueSuccess()->queueSuccess()->queueSuccess();
+
+            $this->runHandle($dep->id);
+
+            $composeCalls = array_values(array_filter($runner->calls, static fn (array $c) => ($c['command'][0] ?? null) === 'docker'));
+            $this->assertCount(3, $composeCalls);
+
+            foreach ($composeCalls as $call) {
+                // The reported bug, directly: the-bridge's own APP_NAME must
+                // be blocked, not silently passed through to the child.
+                $this->assertSame(false, $call['env']['APP_NAME'] ?? null);
+
+                // Any other var the-bridge's own environment happens to
+                // carry is blocked the same way — not just APP_NAME.
+                $this->assertSame(false, $call['env']['BRIDGE_ENV_LEAK_PROBE'] ?? null);
+
+                // The deliberate override survives.
+                $this->assertSame('plain', $call['env']['DOCKER_PROGRESS']);
+
+                // Allowlisted vars docker itself needs are left untouched
+                // (no override key at all — Symfony inherits the real value).
+                $this->assertArrayNotHasKey('PATH', $call['env']);
+            }
+        } finally {
+            putenv('BRIDGE_ENV_LEAK_PROBE');
+        }
+    }
+
+    public function test_exec_step_env_blocks_the_bridges_own_inherited_vars_but_keeps_path_and_overrides(): void
+    {
+        putenv('BRIDGE_ENV_LEAK_PROBE=leaky-value');
+
+        try {
+            $app = $this->makeApp(['deploy_steps' => json_encode([['service' => 'app', 'run' => 'echo hi']])]);
+            $dep = Deployment::create(['app_id' => $app->id, 'status' => DeploymentStatus::Pending]);
+
+            $runner = $this->bindRunner();
+            $this->queueGitPull($runner);
+            $this->queueCommitCapture($runner, 'aabbccddee112233445566778899aabbccddee11', 'Fix the thing');
+            $runner->queueSuccess()->queueSuccess()->queueSuccess();
+            $runner->queueSuccess('{"Name":"a-app-1","Service":"app","State":"running","Status":"Up","Ports":""}');
+            $runner->queueSuccess();
+
+            $this->runHandle($dep->id);
+
+            $execCall = $runner->calls[array_key_last($runner->calls)];
+
+            $this->assertSame(false, $execCall['env']['APP_NAME'] ?? null);
+            $this->assertSame(false, $execCall['env']['BRIDGE_ENV_LEAK_PROBE'] ?? null);
+            $this->assertArrayNotHasKey('PATH', $execCall['env']);
+        } finally {
+            putenv('BRIDGE_ENV_LEAK_PROBE');
+        }
     }
 
     /**
@@ -919,7 +1000,7 @@ class DeployAppTest extends TestCase
      * step's own header line or its output. `passing onOutput: null in
      * runExecStep()` (post-deploy output never logged at all) and
      * `deleting the "--- exec {service}: {run} ---" line` both survived the
-     * full suite before this test existed. Also closes B2's exec half —
+     * full suite before this test existed. Also closes B2's exec half:
      * dropping stderr specifically (as opposed to stdout) in runExecStep()'s
      * onOutput callback.
      */
@@ -1145,7 +1226,7 @@ class DeployAppTest extends TestCase
 
     /**
      * QC round 2, finding 9: this was named `..._and_is_retried`, which
-     * contradicts both the code and its sibling above — exec steps have no
+     * contradicts both the code and its sibling above: exec steps have no
      * retry (reference/src/jobs/deployApp.ts:147-153) and this test queues
      * exactly one exec response. The exec-call count below now pins that.
      */
@@ -1334,7 +1415,7 @@ class DeployAppTest extends TestCase
     /**
      * QC round 2, finding 7: swapping `$this->notify($dep)` and
      * `$this->autoRollback($dep)` in handle()'s catch block survives the
-     * suite — nothing pins their order, although the port's order matches
+     * suite. Nothing pins their order, although the port's order matches
      * reference/src/jobs/deployApp.ts:166 then :169.
      *
      * The difference is observable: SlackNotifier attaches the last 20 log
@@ -1409,7 +1490,7 @@ class DeployAppTest extends TestCase
 
     /**
      * B12: $tries and $timeout have never been asserted directly. $timeout
-     * = 0 is the one that matters most in production — Laravel's queue
+     * = 0 is the one that matters most in production: Laravel's queue
      * worker enforces its own 60s default job timeout on top of whatever
      * the job property says, and a 40-minute build needs this to disable
      * that enforcement entirely (see docs/porting-notes.md, Phase 2's
@@ -1425,11 +1506,11 @@ class DeployAppTest extends TestCase
 
     /**
      * B8: runPostDeployPhase()'s pre-flight was only ever exercised against
-     * two container states — "running" (passes) and "absent from `docker
+     * two container states: "running" (passes) and "absent from `docker
      * compose ps` output entirely" (fails, via the pre-flight and
      * post-deploy-step-failure tests above). Neither distinguishes
      * `($container['state'] ?? null) === 'running'` from the looser
-     * `($container['state'] ?? null) !== null` — a container that IS
+     * `($container['state'] ?? null) !== null`: a container that IS
      * present but in some other state (crashed, restarting, exited)
      * satisfies the loose check and would be wrongly treated as running.
      */
@@ -1461,7 +1542,7 @@ class DeployAppTest extends TestCase
      * B9: `Deployment::findLastSuccessful()` already filters
      * `whereNotNull('commit_sha')` at the query level, so a prior
      * deployment with a genuinely NULL commit_sha never becomes $previous
-     * in the first place — that alone can't discriminate
+     * in the first place. That alone can't discriminate
      * `if ($previous && $previous->commit_sha)` from `if ($previous)` in
      * DeployApp::autoRollback(), since $previous is null under both. An
      * empty-STRING commit_sha passes the NOT NULL filter (findLastSuccessful()
@@ -1504,7 +1585,7 @@ class DeployAppTest extends TestCase
 
     /**
      * B10: autoRollback() calls
-     * `Deployment::findLastSuccessful($dep->app_id, $dep->id)` — the
+     * `Deployment::findLastSuccessful($dep->app_id, $dep->id)`: the
      * beforeId bound must be the FAILING deployment's own id, not some
      * arbitrarily widened bound. A successful deployment created AFTER the
      * failing one (higher id) must never be selected: it didn't exist when
@@ -1576,11 +1657,11 @@ class DeployAppTest extends TestCase
 
     /**
      * B6-full: nothing previously proved the App lookup in handle() (or the
-     * two other app-typed call sites it feeds — DeploySteps::resolve($app)
+     * two other app-typed call sites it feeds: DeploySteps::resolve($app)
      * and ContainerStatus::forWorkDir($app->path)) is actually scoped to
      * THIS deployment's app. Every other test in this file creates only one
      * app, so `App::find($dep->app_id)` and, say,
-     * `App::query()->orderByDesc('id')->first()` are indistinguishable —
+     * `App::query()->orderByDesc('id')->first()` are indistinguishable:
      * both happen to return the only row in the table. appB is deliberately
      * the MIDDLE id of three apps (not the highest, not the lowest) so that
      * BOTH `orderByDesc('id')->first()` and `orderBy('id')->first()`
