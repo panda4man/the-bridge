@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Ported from reference/src/models/app.ts.
@@ -73,5 +74,13 @@ class App extends Model
     public function healthChecks(): HasMany
     {
         return $this->hasMany(HealthCheck::class);
+    }
+
+    /**
+     * @return HasOne<Deployment, $this>
+     */
+    public function latestDeployment(): HasOne
+    {
+        return $this->hasOne(Deployment::class)->latestOfMany();
     }
 }

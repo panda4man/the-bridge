@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Apps\Tables;
 use App\Enums\AppStatus;
 use App\Filament\Actions\DeployAction;
 use App\Models\App;
+use App\Models\Deployment;
 use App\Models\HealthCheck;
 use App\Services\AppProvisioner;
 use Filament\Actions\DeleteAction;
@@ -13,6 +14,7 @@ use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Ported from reference/src/views/apps/index.ejs, which lists every app with
@@ -51,6 +53,21 @@ class AppsTable
                     ->placeholder('—')
                     ->state(fn (App $record): ?string => HealthCheck::findLatest($record->id)?->status?->value),
 
+                TextColumn::make('latestDeployment.created_at')
+                    ->label('Last Deploy')
+                    ->dateTime()
+                    ->placeholder('—')
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query->orderBy(
+                            Deployment::query()
+                                ->select('created_at')
+                                ->whereColumn('deployments.app_id', 'apps.id')
+                                ->latest('created_at')
+                                ->limit(1),
+                            $direction
+                        );
+                    }),
+
                 TextColumn::make('path')
                     ->fontFamily('mono')
                     ->limit(48)
@@ -62,6 +79,7 @@ class AppsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->defaultSort('latestDeployment.created_at', 'desc')
             ->filters([
                 SelectFilter::make('status')
                     ->options(AppStatus::class),
