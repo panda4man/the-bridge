@@ -30,12 +30,6 @@ class AppsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('repo_url')
-                    ->label('Repo URL')
-                    ->searchable()
-                    ->limit(48)
-                    ->tooltip(fn (?string $state): ?string => $state),
-
                 TextColumn::make('branch')
                     ->searchable(),
 
