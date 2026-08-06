@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Deployments\Schemas;
 
+use App\Filament\Resources\Apps\AppResource;
 use App\Livewire\DeploymentLog;
 use App\Models\Deployment;
 use Filament\Infolists\Components\TextEntry;
@@ -28,7 +29,8 @@ class DeploymentInfolist
                     ->columns(3)
                     ->schema([
                         TextEntry::make('app.name')
-                            ->label('App'),
+                            ->label('App')
+                            ->url(fn (Deployment $record): string => AppResource::getUrl('view', ['record' => $record->app])),
 
                         TextEntry::make('status')
                             ->badge(),
