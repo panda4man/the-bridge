@@ -120,6 +120,12 @@ class AppForm
                     ->maxLength(500)
                     ->visibleOn('edit'),
 
+                TextInput::make('web_url')
+                    ->label('App URL')
+                    ->helperText('Link to the app\'s GUI — public or LAN-only.')
+                    ->url()
+                    ->maxLength(500),
+
                 Textarea::make('deploy_steps_text')
                     ->label('Post-deploy steps')
                     ->helperText('One per line, as `service: command`. A bridge.yml in the repo overrides this.')

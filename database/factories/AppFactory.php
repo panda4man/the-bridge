@@ -28,6 +28,7 @@ class AppFactory extends Factory
             'path' => "/repos/{$slug}",
             'status' => AppStatus::Idle,
             'health_url' => null,
+            'web_url' => null,
             'health_check_interval' => 60,
             'webhook_secret' => null,
             'deploy_steps' => null,

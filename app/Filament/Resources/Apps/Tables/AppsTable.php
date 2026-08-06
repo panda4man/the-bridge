@@ -11,6 +11,7 @@ use App\Services\AppProvisioner;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -29,6 +30,19 @@ class AppsTable
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+
+                // Icon-only: the URL itself is shown as a tooltip, not as
+                // column text, so the row stays scannable when most apps
+                // don't have one set.
+                TextColumn::make('web_url')
+                    ->label('')
+                    ->icon(Heroicon::OutlinedArrowTopRightOnSquare)
+                    ->color('primary')
+                    ->tooltip(fn (App $record): ?string => $record->web_url)
+                    ->url(fn (App $record): ?string => $record->web_url)
+                    ->openUrlInNewTab()
+                    ->formatStateUsing(fn (?string $state): string => '')
+                    ->placeholder(''),
 
                 TextColumn::make('branch')
                     ->searchable(),

@@ -51,6 +51,13 @@ class AppInfolist
                             ->label('Health check URL')
                             ->placeholder('—')
                             ->columnSpanFull(),
+
+                        TextEntry::make('web_url')
+                            ->label('App URL')
+                            ->placeholder('—')
+                            ->url(fn (App $record): ?string => $record->web_url)
+                            ->openUrlInNewTab()
+                            ->columnSpanFull(),
                     ]),
 
                 Section::make('Latest health check')

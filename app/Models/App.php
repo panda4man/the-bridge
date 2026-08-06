@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'path',
     'status',
     'health_url',
+    'web_url',
     'health_check_interval',
     'webhook_secret',
     'deploy_steps',
