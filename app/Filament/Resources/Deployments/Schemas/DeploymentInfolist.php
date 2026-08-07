@@ -27,6 +27,7 @@ class DeploymentInfolist
             ->components([
                 Section::make('Deployment')
                     ->columns(3)
+                    ->columnSpanFull()
                     ->schema([
                         TextEntry::make('app.name')
                             ->label('App')
@@ -65,6 +66,7 @@ class DeploymentInfolist
                     ]),
 
                 Section::make('Log')
+                    ->columnSpanFull()
                     ->schema([
                         Livewire::make(DeploymentLog::class)
                             ->columnSpanFull(),
