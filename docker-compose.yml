@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    restart: unless-stopped
+    restart: always
 
     ports:
       - "${BRIDGE_PORT:-8080}:80"
