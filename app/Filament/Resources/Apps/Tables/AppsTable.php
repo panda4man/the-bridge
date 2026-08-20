@@ -27,6 +27,13 @@ class AppsTable
     {
         return $table
             ->columns([
+                TextColumn::make('id')
+                    ->label('ID')
+                    ->fontFamily('mono')
+                    ->copyable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
