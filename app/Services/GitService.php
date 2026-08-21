@@ -97,8 +97,13 @@ final class GitService
 
     public function pull(string $repoPath, string $branch): string
     {
-        // Mirrors `.catch(() => {})` in the reference — best-effort, failure ignored.
-        $this->runner->run(['git', 'config', 'safe.directory', '*'], $repoPath, $this->envFor());
+        // --global + cwd=null: writes straight to the global gitconfig with no
+        // repo discovery, so it succeeds even when $repoPath is dubiously
+        // owned (local-scope safe.directory is ignored by git on purpose, and
+        // writing local scope requires discovering the repo first — which is
+        // exactly the check we're trying to bypass). --replace-all keeps this
+        // idempotent across repeated pulls instead of appending duplicates.
+        $this->runner->run(['git', 'config', '--global', '--replace-all', 'safe.directory', '*'], null, $this->envFor());
 
         $log = [];
 

@@ -100,13 +100,16 @@ class GitServiceTest extends TestCase
         $service->pull('/tmp/existing', 'main');
 
         $this->assertSame([
-            ['git', 'config', 'safe.directory', '*'],
+            ['git', 'config', '--global', '--replace-all', 'safe.directory', '*'],
             ['git', 'fetch', 'origin', 'main'],
             ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
             ['git', 'pull', 'origin', 'main'],
         ], $runner->commands());
 
-        foreach ($runner->calls as $call) {
+        // config call is cwd=null (global, no repo discovery — the whole
+        // point, see GitService::pull()); every other call is repo-scoped.
+        $this->assertNull($runner->calls[0]['cwd']);
+        foreach (array_slice($runner->calls, 1) as $call) {
             $this->assertSame('/tmp/existing', $call['cwd']);
         }
     }
@@ -126,7 +129,7 @@ class GitServiceTest extends TestCase
         $service->pull('/tmp/existing', 'main');
 
         $this->assertSame([
-            ['git', 'config', 'safe.directory', '*'],
+            ['git', 'config', '--global', '--replace-all', 'safe.directory', '*'],
             ['git', 'fetch', 'origin', 'main'],
             ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
             ['git', 'branch', '--list', 'main'],
@@ -134,7 +137,8 @@ class GitServiceTest extends TestCase
             ['git', 'pull', 'origin', 'main'],
         ], $runner->commands());
 
-        foreach ($runner->calls as $call) {
+        $this->assertNull($runner->calls[0]['cwd']);
+        foreach (array_slice($runner->calls, 1) as $call) {
             $this->assertSame('/tmp/existing', $call['cwd']);
         }
     }
@@ -154,7 +158,7 @@ class GitServiceTest extends TestCase
         $service->pull('/tmp/existing', 'main');
 
         $this->assertSame([
-            ['git', 'config', 'safe.directory', '*'],
+            ['git', 'config', '--global', '--replace-all', 'safe.directory', '*'],
             ['git', 'fetch', 'origin', 'main'],
             ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
             ['git', 'branch', '--list', 'main'],
@@ -162,7 +166,8 @@ class GitServiceTest extends TestCase
             ['git', 'pull', 'origin', 'main'],
         ], $runner->commands());
 
-        foreach ($runner->calls as $call) {
+        $this->assertNull($runner->calls[0]['cwd']);
+        foreach (array_slice($runner->calls, 1) as $call) {
             $this->assertSame('/tmp/existing', $call['cwd']);
         }
     }
@@ -171,7 +176,7 @@ class GitServiceTest extends TestCase
     {
         $runner = new FakeProcessRunner;
         $runner
-            ->queueFailure(1) // git config safe.directory * fails, must be ignored
+            ->queueFailure(1) // git config --global --replace-all safe.directory * fails, must be ignored
             ->queueSuccess() // fetch
             ->queueSuccess('main') // rev-parse
             ->queueSuccess('Already up to date.'); // pull
@@ -180,6 +185,33 @@ class GitServiceTest extends TestCase
         $output = $service->pull('/tmp/existing', 'main');
 
         $this->assertSame('Already up to date.', $output);
+    }
+
+    /**
+     * The bug this regression-tests: the config call used to target repo-local
+     * scope (cwd=$repoPath, no --global), which git ignores for safe.directory
+     * AND which itself triggers the dubious-ownership check it was trying to
+     * bypass — so it silently failed for any repo git considered dubiously
+     * owned (e.g. imported directly on the host, not cloned by the-bridge),
+     * and every subsequent command in pull() then threw fatal for real.
+     */
+    public function test_pull_sets_safe_directory_globally_with_no_repo_discovery(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner
+            ->queueSuccess()
+            ->queueSuccess()
+            ->queueSuccess('main')
+            ->queueSuccess('Already up to date.');
+
+        $service = new GitService($runner, '/nonexistent/key');
+        $service->pull('/tmp/existing', 'main');
+
+        $this->assertSame(
+            ['git', 'config', '--global', '--replace-all', 'safe.directory', '*'],
+            $runner->calls[0]['command']
+        );
+        $this->assertNull($runner->calls[0]['cwd']);
     }
 
     public function test_ls_remote_returns_branch_names_stripped_of_refs_heads_prefix(): void
