@@ -12,6 +12,8 @@ class ViewApp extends ViewRecord
 {
     protected static string $resource = AppResource::class;
 
+    protected static ?string $title = 'Application Details';
+
     protected function getHeaderActions(): array
     {
         return [
