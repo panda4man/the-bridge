@@ -95,6 +95,19 @@ final class GitService
         return trim($this->mustRun(['git', 'log', '-1', '--format=%s'], $repoPath)->output);
     }
 
+    /**
+     * `git remote set-url origin <url>`. Needed because `pull()`/`clone()`
+     * never re-derive the remote from `App::$repo_url` on their own —
+     * editing repo_url in the UI is a plain DB write unless something also
+     * repoints the on-disk `origin`, and this is that something.
+     */
+    public function setRemoteUrl(string $repoPath, string $url): void
+    {
+        $this->runner->run(['git', 'config', '--global', '--replace-all', 'safe.directory', '*'], null, $this->envFor());
+
+        $this->mustRun(['git', 'remote', 'set-url', 'origin', $url], $repoPath);
+    }
+
     public function pull(string $repoPath, string $branch): string
     {
         // --global + cwd=null: writes straight to the global gitconfig with no

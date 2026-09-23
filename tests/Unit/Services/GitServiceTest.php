@@ -338,4 +338,42 @@ class GitServiceTest extends TestCase
         $this->expectException(RuntimeException::class);
         $service->lastCommitSubject('/tmp/existing');
     }
+
+    /**
+     * setRemoteUrl() repoints an existing checkout's `origin` to a new URL —
+     * the fix for repo_url edits on an existing app being a no-op DB write
+     * (pull()/fetch() only ever say `origin`, never the URL). Sets
+     * safe.directory globally first, exactly like pull(), since this runs
+     * against a repo dir that may be dubiously owned inside the container.
+     */
+    public function test_set_remote_url_sets_safe_directory_globally_then_sets_the_url(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueSuccess()->queueSuccess();
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $service->setRemoteUrl('/tmp/existing', 'https://gitea.example.com/acme/widgets.git');
+
+        $this->assertSame(
+            ['git', 'config', '--global', '--replace-all', 'safe.directory', '*'],
+            $runner->calls[0]['command']
+        );
+        $this->assertNull($runner->calls[0]['cwd']);
+        $this->assertSame(
+            ['git', 'remote', 'set-url', 'origin', 'https://gitea.example.com/acme/widgets.git'],
+            $runner->calls[1]['command']
+        );
+        $this->assertSame('/tmp/existing', $runner->calls[1]['cwd']);
+    }
+
+    public function test_set_remote_url_throws_on_failure(): void
+    {
+        $runner = new FakeProcessRunner;
+        $runner->queueSuccess()->queueFailure(128, '', 'fatal: No such remote origin');
+        $service = new GitService($runner, '/nonexistent/key');
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('fatal: No such remote origin');
+        $service->setRemoteUrl('/tmp/existing', 'https://gitea.example.com/acme/widgets.git');
+    }
 }
