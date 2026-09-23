@@ -94,6 +94,18 @@ class EditAppTest extends TestCase
                 return new ProcessResult(0, '', '');
             }
 
+            // setRemoteUrl()'s safe.directory config call and its own
+            // `remote set-url` — a repo_url edit triggers both before the
+            // record ever saves. Generic success; the argv-pinning tests
+            // rebind a runner of their own to assert the exact command.
+            if (array_slice($command, 0, 5) === ['git', 'config', '--global', '--replace-all', 'safe.directory']) {
+                return new ProcessResult(0, '', '');
+            }
+
+            if (array_slice($command, 0, 3) === ['git', 'remote', 'set-url']) {
+                return new ProcessResult(0, '', '');
+            }
+
             return null;
         });
 
@@ -169,6 +181,97 @@ class EditAppTest extends TestCase
         // Redirects to the DEPLOYMENT, not back to the app — that is where
         // the operator watches the deploy they just triggered.
         $component->assertRedirect("/deployments/{$deployment->id}");
+    }
+
+    // --- The bug fix: changing repo_url must repoint the on-disk remote ---
+
+    public function test_changing_the_repo_url_repoints_the_checkouts_origin(): void
+    {
+        // A plain positional queue doesn't fit here: AppForm's branch Select
+        // reactively re-runs `git ls-remote` an implementation-defined
+        // number of times as the form fills (see FakeProcessRunner's
+        // answerByArgv docblock), interleaved with the config/set-url pair
+        // save triggers. Assert by filtering the recorded calls, not by
+        // fixed position.
+        $runner = $this->fakeGit();
+
+        $app = $this->makeApp(['repo_url' => 'https://github.com/x/y.git']);
+
+        $this->edit($app)
+            ->fillForm(['repo_url' => 'https://gitea.example.com/x/y.git'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $setUrlCalls = array_values(array_filter(
+            $runner->calls,
+            fn (array $call): bool => array_slice($call['command'], 0, 3) === ['git', 'remote', 'set-url'],
+        ));
+        $this->assertCount(1, $setUrlCalls);
+        $this->assertSame(
+            ['git', 'remote', 'set-url', 'origin', 'https://gitea.example.com/x/y.git'],
+            $setUrlCalls[0]['command'],
+        );
+        $this->assertSame($app->path, $setUrlCalls[0]['cwd']);
+
+        $configCalls = array_filter(
+            $runner->calls,
+            fn (array $call): bool => array_slice($call['command'], 0, 5)
+                === ['git', 'config', '--global', '--replace-all', 'safe.directory'],
+        );
+        $this->assertNotEmpty($configCalls);
+
+        $this->assertSame('https://gitea.example.com/x/y.git', $app->fresh()->repo_url);
+    }
+
+    public function test_an_unchanged_repo_url_does_not_touch_the_remote(): void
+    {
+        $runner = $this->fakeGit();
+        $app = $this->makeApp(['repo_url' => 'https://github.com/x/y.git']);
+
+        $this->edit($app)
+            ->fillForm(['name' => 'Renamed Only'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        foreach ($runner->commands() as $command) {
+            $this->assertNotSame(['git', 'remote'], array_slice($command, 0, 2));
+        }
+    }
+
+    public function test_a_failed_remote_repoint_blocks_the_save_and_surfaces_on_the_repo_url_field(): void
+    {
+        $runner = new FakeProcessRunner;
+        $this->app->instance(ProcessRunner::class, $runner);
+        $runner->answerByArgv(function (array $command): ?ProcessResult {
+            if (array_slice($command, 0, 3) === ['git', 'ls-remote', '--heads']) {
+                return new ProcessResult(0, "0000000\trefs/heads/main", '');
+            }
+
+            if (array_slice($command, 0, 5) === ['git', 'config', '--global', '--replace-all', 'safe.directory']) {
+                return new ProcessResult(0, '', '');
+            }
+
+            if (array_slice($command, 0, 3) === ['git', 'remote', 'set-url']) {
+                return new ProcessResult(128, '', 'fatal: not a git repository');
+            }
+
+            return null;
+        });
+
+        $app = $this->makeApp(['repo_url' => 'https://github.com/x/y.git']);
+
+        $component = $this->edit($app)
+            ->fillForm(['repo_url' => 'https://gitea.example.com/x/y.git'])
+            ->call('save');
+
+        $component->assertHasFormErrors(['repo_url']);
+        $this->assertSame(
+            'Could not update the remote: fatal: not a git repository',
+            $component->instance()->getErrorBag()->first('data.repo_url'),
+        );
+        // Rejected before the row was ever written — the DB must not claim a
+        // repo_url the checkout's origin doesn't actually match.
+        $this->assertSame('https://github.com/x/y.git', $app->fresh()->repo_url);
     }
 
     // --- deploy_steps: JSON column <-> plain-text textarea ---

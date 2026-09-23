@@ -12,16 +12,25 @@ use App\Filament\Resources\Deployments\DeploymentResource;
 use App\Jobs\DeployApp;
 use App\Models\Deployment;
 use App\Services\AppProvisioner;
+use App\Services\GitService;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
- * Updating an app has a side effect: changing `branch` immediately queues a
- * deploy of the new branch and sends the operator to that deployment instead
- * of back to the app. Ported from reference/src/routes/apps.ts:110-127.
+ * Updating an app has two side effects. Changing `branch` immediately queues
+ * a deploy of the new branch and sends the operator to that deployment
+ * instead of back to the app (ported from reference/src/routes/apps.ts:110-
+ * 127). Changing `repo_url` repoints the on-disk checkout's `origin` — the
+ * reference never had this app-update repoint problem because it was a plain
+ * DB write there too; this is a fix on top of parity, not a port of anything.
+ * Without it, the row says one remote while `git pull`/`git fetch` (which
+ * only ever say `origin`, never the URL) keep hitting whatever was cloned
+ * originally.
  *
  * Deleting an app has a bigger one — see the DeleteAction below.
  */
@@ -69,6 +78,10 @@ class EditApp extends EditRecord
     {
         $previousBranch = $record->branch;
 
+        if (($data['repo_url'] ?? $record->repo_url) !== $record->repo_url) {
+            $this->repointRemote($record->path, (string) $data['repo_url']);
+        }
+
         $data['deploy_steps'] = AppForm::deployStepsJson((string) ($data['deploy_steps_text'] ?? ''));
         unset($data['deploy_steps_text']);
 
@@ -95,6 +108,24 @@ class EditApp extends EditRecord
         }
 
         return $record;
+    }
+
+    /**
+     * Runs BEFORE $record->update() so a failed `git remote set-url` throws
+     * and aborts the save entirely — the row must never end up pointing at a
+     * repo_url the checkout's origin doesn't actually match. Surfaced as a
+     * field error on repo_url, the same convention CreateApp.php uses for a
+     * failed clone.
+     */
+    private function repointRemote(string $path, string $repoUrl): void
+    {
+        try {
+            app(GitService::class)->setRemoteUrl($path, $repoUrl);
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages([
+                'data.repo_url' => 'Could not update the remote: '.$e->getMessage(),
+            ]);
+        }
     }
 
     protected function getSavedNotification(): ?Notification
